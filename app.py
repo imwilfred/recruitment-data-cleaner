@@ -47,7 +47,7 @@ if uploaded_file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip(), 12))
 
-        # Classify high level funnel milestones
+        # Classify high level funnel milestones (Fixed array placements)
         def get_stage(r):
             if r == 1: return "Hired"
             elif r in: return "Offered Stage"
