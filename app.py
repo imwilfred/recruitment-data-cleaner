@@ -58,10 +58,17 @@ if uploaded_file is not None:
 
         df['Funnel_Stage'] = df['Application Status'].apply(evaluate_stage) if 'Application Status' in df.columns else "Screening Pool"
 
-        # Organize columns layout to display the most critical information first
-        core_layout = ['Candidate Name', 'Email Address', 'Current_Company', 'Total Exp', 'X0PA Score', 'Funnel_Stage', 'Application Status', 'Job Name']
-        extra_layout = [c for c in df.columns if c not in core_layout]
-        master_cleaned_df = df[core_layout + extra_layout]
+        # --- EXPLICIT COLUMN FILTERING ---
+        # Define the exact columns needed for the analysis
+        desired_columns = [
+            'Candidate Name', 'Email Address', 'Mobile Number', 'Current_Company',
+            'Total Exp', 'X0PA Score', 'Funnel_Stage', 'Application Status', 'App Date',
+            'Job Id', 'Job Name', 'Job Status', 'Application Source', 'Recruiter Name'
+        ]
+        
+        # Only keep columns that actually exist in the uploaded file to avoid errors
+        available_cols = [c for c in desired_columns if c in df.columns or c in ['Current_Company', 'Funnel_Stage']]
+        master_cleaned_df = df[available_cols]
 
         # --- DYNAMIC PROCESSOR FOR THE TWO VIEWS ---
         # View A: Total Applications (Keep everything)
