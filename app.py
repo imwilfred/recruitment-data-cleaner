@@ -22,7 +22,8 @@ if uploaded_file is not None:
             
         # --- THE UNDERLYING CLEANING CORE ---
         # Strip invisible spaces and fix cases across the core dataset
-        for col in ['Candidate Name', 'Email Address', 'Application Status', 'Job Name']:
+        strings_to_clean = ['Candidate Name', 'Email Address', 'NRIC Number', 'Application Status', 'Job Name', 'Citizenship', 'Country Of Birth']
+        for col in strings_to_clean:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip()
                 
@@ -30,6 +31,12 @@ if uploaded_file is not None:
             df['Candidate Name'] = df['Candidate Name'].str.title()
         if 'Email Address' in df.columns:
             df['Email Address'] = df['Email Address'].str.lower()
+        if 'NRIC Number' in df.columns:
+            df['NRIC Number'] = df['NRIC Number'].str.upper()
+        if 'Citizenship' in df.columns:
+            df['Citizenship'] = df['Citizenship'].str.title()
+        if 'Country Of Birth' in df.columns:
+            df['Country Of Birth'] = df['Country Of Birth'].str.title()
 
         # Handle numeric errors safely
         if 'X0PA Score' in df.columns:
@@ -58,27 +65,85 @@ if uploaded_file is not None:
 
         df['Funnel_Stage'] = df['Application Status'].apply(evaluate_stage) if 'Application Status' in df.columns else "Screening Pool"
 
+        # --- ADVANCED CUSTOM EDUCATION PARSER ---
+        def parse_education_funnel(edu_text):
+            if pd.isna(edu_text) or not isinstance(edu_text, str) or edu_text.strip() == "":
+                return "Not Provided"
+            
+            # Extract standard key degree indicators from raw pipe-delimited text blocks
+            text_upper = edu_text.upper()
+            
+            has_phd = "PHD" in text_upper or "DOCTOR" in text_upper
+            has_master = "MASTER" in text_upper or "MSC" in text_upper or "MBA" in text_upper
+            has_bachelor = "BACHELOR" in text_upper or "DEGREE" in text_upper or "BSC" in text_upper or "BENG" in text_upper
+            has_diploma = "DIPLOMA" in text_upper or "POLYTECHNIC" in text_upper
+            has_alevels = "A LEVEL" in text_upper or "ADVANCED LEVEL" in text_upper or "JUNIOR COLLEGE" in text_upper
+            
+            # Apply your tiered visibility truncation rules
+            if has_phd:
+                output = ["PhD"]
+                if has_master: output.append("Master")
+                if has_bachelor: output.append("Bachelor")
+                return " ➔ ".join(output)
+            
+            elif has_master:
+                output = ["Master"]
+                if has_bachelor: output.append("Bachelor")
+                return " ➔ ".join(output)
+            
+            elif has_bachelor:
+                return "Bachelor"
+            
+            elif has_diploma or has_alevels:
+                output = []
+                if has_diploma: output.append("Diploma")
+                if has_alevels: output.append("A-Levels")
+                return " & ".join(output)
+                
+            return "Other / Lower Secondary"
+
+        df['Highest_Education'] = df['Candidate Education'].apply(parse_education_funnel) if 'Candidate Education' in df.columns else "Not Provided"
+
         # --- EXPLICIT COLUMN FILTERING ---
-        # Define the exact columns needed for the analysis
         desired_columns = [
-            'Candidate Name', 'Email Address', 'Mobile Number', 'Current_Company',
+            'Candidate Name', 'Email Address', 'NRIC Number', 'Mobile Number', 
+            'Citizenship', 'Country Of Birth', 'Highest_Education', 'Current_Company',
             'Total Exp', 'X0PA Score', 'Funnel_Stage', 'Application Status', 'App Date',
-            'Job Id', 'Job Name', 'Job Status', 'Application Source', 'Recruiter Name'
+            'Job Id', 'Job Name', 'Job Status', 'Application Source'
         ]
         
         # Only keep columns that actually exist in the uploaded file to avoid errors
-        available_cols = [c for c in desired_columns if c in df.columns or c in ['Current_Company', 'Funnel_Stage']]
+        available_cols = [c for c in desired_columns if c in df.columns or c in ['Current_Company', 'Funnel_Stage', 'Highest_Education']]
         master_cleaned_df = df[available_cols]
 
         # --- DYNAMIC PROCESSOR FOR THE TWO VIEWS ---
         # View A: Total Applications (Keep everything)
         apps_df = master_cleaned_df.copy()
 
-        # View B: Unique Applicants (Remove duplicates by Email, keeping highest X0PA Score row)
-        applicants_df = master_cleaned_df.copy()
-        if 'Email Address' in applicants_df.columns and 'X0PA Score' in applicants_df.columns:
-            applicants_df = applicants_df.sort_values(by='X0PA Score', ascending=False)
-            applicants_df = applicants_df.drop_duplicates(subset=['Email Address'], keep='first')
+        # View B: Smart Unique Applicants Filter (Email or NRIC Check)
+        applicants_df = master_cleaned_df.copy().sort_values(by='X0PA Score', ascending=False)
+        
+        for col in ['Email Address', 'NRIC Number']:
+            if col in applicants_df.columns:
+                applicants_df[col] = applicants_df[col].replace(['nan', 'none', 'na', ''], pd.NA)
+
+        if 'Email Address' in applicants_df.columns or 'NRIC Number' in applicants_df.columns:
+            has_nric = applicants_df[applicants_df['NRIC Number'].notna()]
+            no_nric = applicants_df[applicants_df['NRIC Number'].isna()]
+            
+            if 'NRIC Number' in applicants_df.columns:
+                has_nric = has_nric.drop_duplicates(subset=['NRIC Number'], keep='first')
+            
+            combined_pass1 = pd.concat([has_nric, no_nric])
+            
+            if 'Email Address' in applicants_df.columns:
+                applicants_df = combined_pass1.drop_duplicates(subset=['Email Address'], keep='first')
+            else:
+                applicants_df = combined_pass1
+
+        # Fill NAs back with clean display values for the UI tables
+        apps_df = apps_df.fillna("Not Provided")
+        applicants_df = applicants_df.fillna("Not Provided")
 
         # --- USER INTERFACE TABS ---
         tab1, tab2 = st.tabs(["📈 View A: Total Applications Funnel", "👥 View B: Unique Applicants Funnel"])
