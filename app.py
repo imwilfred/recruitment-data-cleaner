@@ -2,7 +2,6 @@ import streamlit as st, pandas as pd, re, io
 st.set_page_config(page_title="Funnel Builder", layout="wide")
 st.title("📊 Interactive Recruitment Funnel & Data Cleaner")
 
-# Initialize a dynamic state tracker to clear files cleanly without page reloads
 if "uploader_key" not in st.session_state:
     st.session_state["uploader_key"] = 0
 
@@ -28,13 +27,12 @@ def render_funnel_tab(title, data, job_name):
         data.to_excel(w, index=False, sheet_name='Data Export')
     st.download_button(f"📥 Export {title} to Excel", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-# Pass the dynamic session state token key to the file uploader
 file = st.file_uploader("Upload raw CSV or Excel file", type=["csv", "xlsx"], key=f"uploader_{st.session_state['uploader_key']}")
 
-# --- ELEGANT RESET TRIGGER ---
+# --- FIXED DISTINCT PRIMARY BUTTON STYLE ---
 if file is not None:
-    if st.button("🗑️ Clear Current File & Restart"):
-        st.session_state["uploader_key"] += 1  # Increments the state key to clear out the current file instantly
+    if st.button("🗑️ Clear Current File & Restart", type="primary"):
+        st.session_state["uploader_key"] += 1
         st.rerun()
 
     try:
@@ -112,7 +110,10 @@ if file is not None:
         st.sidebar.header("🔍 Funnel Controls")
         job_list = ["All Jobs"] + sorted(list(master_df['Job Name'].unique()))
         selected_job = st.sidebar.selectbox("Filter by Specific Job Requisition", job_list)
-        max_exp = float(master_df['Total Exp'].max()) if 'Total Exp' in master_df.columns else 30.0
+        
+        # Safe baseline calculation values if dataset contains empty experience rows
+        max_exp = float(master_df['Total Exp'].max()) if 'Total Exp' in master_df.columns and len(master_df) > 0 else 10.0
+        if pd.isna(max_exp) or max_exp <= 0: max_exp = 10.0
         min_exp_input = st.sidebar.slider("Minimum Years of Experience", 0.0, max_exp, 0.0, step=0.5)
 
         # --- GENERATE DATA CORES ---
