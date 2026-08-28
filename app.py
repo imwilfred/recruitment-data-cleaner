@@ -1,43 +1,61 @@
 import streamlit as st, pandas as pd, re, io
-st.set_page_config(page_title="Funnel Builder", page_icon="📊", layout="wide")
-st.title("Advanced Recruitment Funnel & Data Cleaner")
+st.set_page_config(page_title="Funnel Builder", layout="wide")
+st.title("📊 Interactive Recruitment Funnel & Data Cleaner")
 
-uploaded_file = st.file_uploader("Upload your raw CSV or Excel file", type=["csv", "xlsx"])
+# Helper to normalize standard text strings safely
+def clean_str(series, case="title"):
+    if case == "title": return series.astype(str).str.strip().str.title()
+    if case == "upper": return series.astype(str).str.strip().str.upper()
+    return series.astype(str).str.strip().str.lower()
 
-if uploaded_file is not None:
+# Shared UI Render Block to display metrics, dataframes, and excel downloads
+def render_funnel_tab(title, data, job_name):
+    st.subheader(f"{title}: {job_name}")
+    t = len(data)
+    e = len(data[data['Eligibility_Status'] == "Eligible"])
+    s = len(data[data['Funnel_Stage'].isin(["Offered Stage", "Interview Stage", "Shortlisted Stage", "Hired"])])
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Count", t)
+    c2.metric("Eligible (SG Citizens)", e)
+    c3.metric("Shortlisted & Beyond", s)
+    
+    st.dataframe(data)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as w: 
+        data.to_excel(w, index=False, sheet_name='Data Export')
+    st.download_button(f"📥 Export {title} to Excel", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+file = st.file_uploader("Upload raw CSV or Excel file", type=["csv", "xlsx"])
+
+if file is not None:
     try:
-        df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+        df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
         
-        # Clean text columns
-        cc = ['Candidate Name', 'Email Address', 'NRIC Number', 'Application Status', 'Job Name', 'Citizenship', 'Country Of Birth']
-        for c in cc:
-            if c in df.columns: df[c] = df[c].astype(str).str.strip()
-        if 'Candidate Name' in df.columns: df['Candidate Name'] = df['Candidate Name'].str.title()
-        if 'Email Address' in df.columns: df['Email Address'] = df['Email Address'].str.lower()
-        if 'NRIC Number' in df.columns: df['NRIC Number'] = df['NRIC Number'].str.upper()
-        if 'Citizenship' in df.columns: df['Citizenship'] = df['Citizenship'].str.title()
-        if 'Country Of Birth' in df.columns: df['Country Of Birth'] = df['Country Of Birth'].str.title()
-        if 'X0PA Score' in df.columns: df['X0PA Score'] = pd.to_numeric(df['X0PA Score'], errors='coerce').fillna(0)
-        if 'Total Exp' in df.columns: df['Total Exp'] = pd.to_numeric(df['Total Exp'], errors='coerce').fillna(0)
+        # Clean text columns and spaces
+        for col, mode in [('Candidate Name','title'), ('Email Address','lower'), ('NRIC Number','upper'), ('Citizenship','title'), ('Country Of Birth','title'), ('Application Status','none')]:
+            if col in df.columns: df[col] = clean_str(df[col], mode)
+            
+        df['Job Name'] = df['Job Name'].fillna("Unknown Role").astype(str).str.strip()
+        df['X0PA Score'] = pd.to_numeric(df['X0PA Score'], errors='coerce').fillna(0)
+        df['Total Exp'] = pd.to_numeric(df['Total Exp'], errors='coerce').fillna(0)
 
-        # Parse employer text blocks
-        def get_company(txt):
-            if pd.isna(txt) or not isinstance(txt, str): return "Not Listed"
-            m = re.search(r'C:\s*([^.\n]+)', txt)
+        # Parse current employer text strings
+        def parse_co(x):
+            if pd.isna(x) or not isinstance(x, str): return "Not Listed"
+            m = re.search(r'C:\s*([^.\n]+)', x)
             return m.group(1).strip() if m else "Not Listed"
-        df['Current_Company'] = df['Work Experience'].apply(get_company) if 'Work Experience' in df.columns else "Not Listed"
+        df['Current_Company'] = df['Work Experience'].apply(parse_co) if 'Work Experience' in df.columns else "Not Listed"
 
-        # Check SG citizenship eligibility criteria
-        def get_eligibility(row):
-            cz = str(row.get('Citizenship', '')).lower()
-            cob = str(row.get('Country Of Birth', '')).lower()
+        # SG Citizenship Eligibility Mapping
+        def parse_el(r):
+            cz, cob = str(r.get('Citizenship', '')).lower(), str(r.get('Country Of Birth', '')).lower()
             if 'citizen' in cz or cz == 'singapore':
-                if any(x in cob for x in ['china', 'myanmar', 'myanmr']): return "Ineligible (Exception)"
-                return "Eligible"
+                return "Ineligible (Exception)" if any(x in cob for x in ['china', 'myanmar', 'myanmr']) else "Eligible"
             return "Ineligible"
-        df['Eligibility_Status'] = df.apply(get_eligibility, axis=1)
+        df['Eligibility_Status'] = df.apply(parse_el, axis=1)
 
-        # Precise 11-Tier Status Rankings mapping
+        # Linear Lifecycle Status Priority Mapping
         st_map = {
             "Hired": 1, "Hire in Progress": 2, "Offer in Progress": 3,
             "Verbal Offer in Progress": 4, "Salary Proposal in Progress": 5,
@@ -47,59 +65,58 @@ if uploaded_file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip(), 12))
 
-        # Classify high level funnel milestones using safe numeric comparisons
-        def get_stage(r):
-            if r == 1: return "Hired"
-            elif r >= 2 and r <= 5: return "Offered Stage"
-            elif r >= 6 and r <= 7: return "Interview Stage"
-            elif r >= 8 and r <= 9: return "Shortlisted Stage"
-            elif r == 11: return "Rejected Baseline"
-            return "Screening Pool"
-        df['Funnel_Stage'] = df['Rank'].apply(get_stage)
+        # Classify lifecycle categories
+        def parse_st(r):
+            s = str(r.get('Application Status', '')).strip()
+            if s == "Hired": return "Hired"
+            if "Offer" in s or "Salary" in s or s == "Hire in Progress": return "Offered Stage"
+            if "Interview" in s: return "Interview Stage"
+            if "Slot" in s: return "Shortlisted Stage"
+            return "Rejected Pool" if "Reject" in s else "Screening Pool"
+        df['Funnel_Stage'] = df.apply(parse_st, axis=1)
 
-        # Extract Tiered Education details
-        def get_edu(edu_text):
+        # Education, Field and School Extractor
+        def parse_edu(txt):
             defaults = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
-            if pd.isna(edu_text) or not isinstance(edu_text, str) or edu_text.strip() == "": return defaults
-            parts = [p.strip() for p in edu_text.split('|') if p.strip()]
-            if not parts: return defaults
-            u = edu_text.upper()
+            if pd.isna(txt) or not isinstance(txt, str) or txt.strip() == "": return defaults
+            parts = [p.strip() for p in txt.split('|') if p.strip()]
+            u = txt.upper()
             phd, master, bach, dip, alev = "PHD" in u or "DOCTOR" in u, "MASTER" in u or "MSC" in u or "MBA" in u, "BACHELOR" in u or "DEGREE" in u or "BSC" in u or "BENG" in u, "DIPLOMA" in u or "POLYTECHNIC" in u, "A LEVEL" in u or "ADVANCED LEVEL" in u or "JUNIOR COLLEGE" in u
             lvl = "PhD" + (" ➔ Master" if master else "") + (" ➔ Bachelor" if bach else "") if phd else ("Master" + (" ➔ Bachelor" if bach else "") if master else ("Bachelor" if bach else (" & ".join([w for w, c in [("Diploma", dip), ("A-Levels", alev)] if c]) if (dip or alev) else "Other / School")))
-            t_idx = 0
             t_kw = "PHD" if phd else ("MASTER" if master else ("BACHELOR" if bach else "DIPLOMA"))
-            for i, p in enumerate(parts):
-                if t_kw in p.upper(): t_idx = i; break
+            t_idx = next((i for i, p in enumerate(parts) if t_kw in p.upper()), 0)
             try:
                 t_arr = parts[max(0, t_idx-1):min(len(parts), t_idx+5)]
                 sch, disc = "Not Listed", "Not Listed"
-                skw = ["UNIVERSITY", "POLYTECHNIC", "INSTITUTE", "COLLEGE", "SCHOOL", "NUS", "NTU", "SMU", "SIT", "SUTD", "SUSS", "ACADEMY"]
-                ikw = ["BACHELOR", "MASTER", "PHD", "DIPLOMA", "DEGREE", "HONOURS", "HONORS", "DISTINCTION", "CERTIFICATE", "BSC", "BENG", "MSC", "MBA", "CERTIFICATION"]
                 for item in t_arr:
                     if re.search(r'\d{4}', item) or re.match(r'^\d+(\.\d+)?$', item): continue
-                    if any(k in item.upper() for k in skw): sch = item; continue
-                    if not any(k in item.upper() for k in ikw) and len(item) > 2 and disc == "Not Listed": disc = item
+                    if any(k in item.upper() for k in ["UNIVERSITY", "POLYTECHNIC", "INSTITUTE", "COLLEGE", "SCHOOL", "NUS", "NTU", "SMU", "SIT", "SUTD", "SUSS"]): sch = item
+                    elif not any(k in item.upper() for k in ["BACHELOR", "MASTER", "PHD", "DIPLOMA", "DEGREE", "HONOURS", "DISTINCTION"]) and len(item) > 2 and disc == "Not Listed": disc = item
                 disc = re.sub(r'(Bachelor of|Master of|BSc|BEng|Diploma in|BSc Hons|Degree in)\s*', '', disc, flags=re.IGNORECASE).strip()
                 return {"l": lvl, "d": disc.title(), "s": sch.title()}
-            except:
-                return {"l": lvl, "d": "Not Listed", "s": "Not Listed"}
+            except: return {"l": lvl, "d": "Not Listed", "s": "Not Listed"}
 
         if 'Candidate Education' in df.columns:
-            edu_mapped = df['Candidate Education'].apply(get_edu)
-            df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = [i['l'] for i in edu_mapped], [i['d'] for i in edu_mapped], [i['s'] for i in edu_mapped]
+            mapped = df['Candidate Education'].apply(parse_edu)
+            df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = [i['l'] for i in mapped], [i['d'] for i in mapped], [i['s'] for i in mapped]
         else:
             df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = "Not Provided", "Not Listed", "Not Listed"
 
-        # Structural Layout Filter
+        # Clean display layout
         layout = ['Candidate Name', 'Email Address', 'NRIC Number', 'Mobile Number', 'Citizenship', 'Country Of Birth', 'Eligibility_Status', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Current_Company', 'Total Exp', 'X0PA Score', 'Funnel_Stage', 'Application Status', 'App Date', 'Job Id', 'Job Name', 'Job Status', 'Application Source', 'Rank']
         av_cols = [c for c in layout if c in df.columns or c in ['Current_Company', 'Funnel_Stage', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Eligibility_Status', 'Rank']]
         master_df = df[av_cols]
 
-        # VIEW A: Total Applications
-        apps_df = master_df.copy().fillna("Not Provided")
-        if 'Rank' in apps_df.columns: apps_df = apps_df.drop(columns=['Rank'])
+        # --- SIDEBAR FILTERS CONTROLS ---
+        st.sidebar.header("🔍 Funnel Controls")
+        job_list = ["All Jobs"] + sorted(list(master_df['Job Name'].unique()))
+        selected_job = st.sidebar.selectbox("Filter by Specific Job Requisition", job_list)
+        max_exp = float(master_df['Total Exp'].max()) if 'Total Exp' in master_df.columns else 30.0
+        min_exp_input = st.sidebar.slider("Minimum Years of Experience", 0.0, max_exp, 0.0, step=0.5)
 
-        # VIEW B: Unique Applicants Hierarchical Deduplication
+        # --- DUAL CORE DATA MATRIX BUILDER ---
+        apps_df = master_df.copy().fillna("Not Provided")
+        
         uniq_df = master_df.copy().sort_values(by=['Rank', 'X0PA Score'], ascending=[True, False])
         for col in ['Email Address', 'NRIC Number']:
             if col in uniq_df.columns: uniq_df[col] = uniq_df[col].replace(['nan', 'none', 'na', ''], pd.NA)
@@ -107,37 +124,22 @@ if uploaded_file is not None:
             has_n = uniq_df[uniq_df['NRIC Number'].notna()]
             no_n = uniq_df[uniq_df['NRIC Number'].isna()]
             if 'NRIC Number' in uniq_df.columns: has_n = has_n.drop_duplicates(subset=['NRIC Number'], keep='first')
-            comb = pd.concat([has_n, no_n])
-            uniq_df = comb.drop_duplicates(subset=['Email Address'], keep='first') if 'Email Address' in comb.columns else comb
-        if 'Rank' in uniq_df.columns: uniq_df = uniq_df.drop(columns=['Rank'])
-        uniq_df = uniq_df.fillna("Not Provided")
+            uniq_df = pd.concat([has_n, no_n]).drop_duplicates(subset=['Email Address'], keep='first')
 
-        # UI Panels rendering
-        tab1, tab2 = st.tabs(["📈 View A: Total Applications Funnel", "👥 View B: Unique Applicants Funnel"])
-        
-        with tab1:
-            st.subheader("Application Funnel Summary")
-            ta, ea, sa = len(apps_df), len(apps_df[apps_df['Eligibility_Status'] == "Eligible"]), len(apps_df[apps_df['Funnel_Stage'].isin(["Shortlisted Stage", "Interview Stage", "Offered Stage", "Hired"])])
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Total Applications", ta)
-            col2.metric("Eligible Applications", ea)
-            col3.metric("Shortlisted Applications", sa)
-            st.dataframe(apps_df)
-            buf_a = io.BytesIO()
-            with pd.ExcelWriter(buf_a, engine='openpyxl') as w: apps_df.to_excel(w, index=False, sheet_name='All Applications')
-            st.download_button("📥 Export Total Applications", data=buf_a.getvalue(), file_name="total_applications.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            
-        with tab2:
-            st.subheader("Unique Applicant Funnel Summary")
-            tu, eu, su = len(uniq_df), len(uniq_df[uniq_df['Eligibility_Status'] == "Eligible"]), len(uniq_df[uniq_df['Funnel_Stage'].isin(["Shortlisted Stage", "Interview Stage", "Offered Stage", "Hired"])])
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Total Unique Talent", tu)
-            m2.metric("Eligible Unique Talent", eu)
-            m3.metric("Shortlisted Candidates", su)
-            st.dataframe(uniq_df)
-            buf_b = io.BytesIO()
-            with pd.ExcelWriter(buf_b, engine='openpyxl') as w: uniq_df.to_excel(w, index=False, sheet_name='Unique Applicants')
-            st.download_button("📥 Export Unique Applicants", data=buf_b.getvalue(), file_name="unique_applicants.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        # Apply Global Interactive Controls
+        if selected_job != "All Jobs":
+            apps_df = apps_df[apps_df['Job Name'] == selected_job]
+            uniq_df = uniq_df[uniq_df['Job Name'] == selected_job]
+        apps_df = apps_df[apps_df['Total Exp'] >= min_exp_input]
+        uniq_df = uniq_df[uniq_df['Total Exp'] >= min_exp_input].fillna("Not Provided")
+
+        if 'Rank' in apps_df.columns: apps_df = apps_df.drop(columns=['Rank'])
+        if 'Rank' in uniq_df.columns: uniq_df = uniq_df.drop(columns=['Rank'])
+
+        # --- GRAPHICAL UI TABS ---
+        t1, t2 = st.tabs(["📈 View A: Total Applications Funnel", "👥 View B: Unique Applicants Funnel"])
+        with t1: render_funnel_tab("Total Applications Funnel", apps_df, selected_job)
+        with t2: render_funnel_tab("Unique Applicants Funnel", uniq_df, selected_job)
             
     except Exception as e: st.error(f"Error compiling funnel: {e}")
 else: st.info("Awaiting raw dataset upload to generate funnel pipelines.")
