@@ -20,7 +20,7 @@ if uploaded_file is not None:
         else:
             df = pd.read_excel(uploaded_file)
             
-        st.success(block=True, body=f"Successfully loaded {len(df)} candidate entries!")
+        st.success(f"Successfully loaded {len(df)} candidate entries!")
         
         # --- THE CLEANING ENGINE ---
         # Standardize basic text case structures
