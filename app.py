@@ -47,12 +47,12 @@ if uploaded_file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip(), 12))
 
-        # Classify high level funnel milestones (Fixed array placements)
+        # Classify high level funnel milestones using safe numeric comparisons
         def get_stage(r):
             if r == 1: return "Hired"
-            elif r in: return "Offered Stage"
-            elif r in: return "Interview Stage"
-            elif r in: return "Shortlisted Stage"
+            elif r >= 2 and r <= 5: return "Offered Stage"
+            elif r >= 6 and r <= 7: return "Interview Stage"
+            elif r >= 8 and r <= 9: return "Shortlisted Stage"
             elif r == 11: return "Rejected Baseline"
             return "Screening Pool"
         df['Funnel_Stage'] = df['Rank'].apply(get_stage)
