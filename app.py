@@ -17,17 +17,30 @@ if uploaded_file is not None:
         if 'X0PA Score' in df.columns: df['X0PA Score'] = pd.to_numeric(df['X0PA Score'], errors='coerce').fillna(0)
         if 'Total Exp' in df.columns: df['Total Exp'] = pd.to_numeric(df['Total Exp'], errors='coerce').fillna(0)
 
+        # Parse current employer strings
         def get_company(txt):
             if pd.isna(txt) or not isinstance(txt, str): return "Not Listed"
             m = re.search(r'C:\s*([^.\n]+)', txt)
             return m.group(1).strip() if m else "Not Listed"
         df['Current_Company'] = df['Work Experience'].apply(get_company) if 'Work Experience' in df.columns else "Not Listed"
 
+        # Determine funnel pipeline stages
         def get_stage(status):
             s = str(status)
             return "Shortlisted" if "Slot In Progress" in s else ("Rejected" if "Reject" in s else "Screening Pool")
         df['Funnel_Stage'] = df['Application Status'].apply(get_stage) if 'Application Status' in df.columns else "Screening Pool"
 
+        # Evaluate recruitment eligibility parameters
+        def check_eligibility(row):
+            cz = str(row.get('Citizenship', '')).strip().lower()
+            cob = str(row.get('Country Of Birth', '')).strip().lower()
+            if 'citizen' in cz or cz == 'singapore':
+                if any(x in cob for x in ['china', 'myanmar', 'myanmr']): return "Ineligible (Exception)"
+                return "Eligible"
+            return "Ineligible"
+        df['Eligibility_Status'] = df.apply(check_eligibility, axis=1)
+
+        # Content-Aware Education, Field, and Institution Parser
         def get_edu_details(edu_text):
             defaults = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
             if pd.isna(edu_text) or not isinstance(edu_text, str) or edu_text.strip() == "": return defaults
@@ -63,8 +76,9 @@ if uploaded_file is not None:
         else:
             df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = "Not Provided", "Not Listed", "Not Listed"
 
-        layout = ['Candidate Name', 'Email Address', 'NRIC Number', 'Mobile Number', 'Citizenship', 'Country Of Birth', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Current_Company', 'Total Exp', 'X0PA Score', 'Funnel_Stage', 'Application Status', 'App Date', 'Job Id', 'Job Name', 'Job Status', 'Application Source']
-        available_cols = [c for c in layout if c in df.columns or c in ['Current_Company', 'Funnel_Stage', 'Highest_Education', 'Primary_Discipline', 'Institution']]
+        # Organize screen view layout columns
+        layout = ['Candidate Name', 'Email Address', 'NRIC Number', 'Mobile Number', 'Citizenship', 'Country Of Birth', 'Eligibility_Status', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Current_Company', 'Total Exp', 'X0PA Score', 'Funnel_Stage', 'Application Status', 'App Date', 'Job Id', 'Job Name', 'Job Status', 'Application Source']
+        available_cols = [c for c in layout if c in df.columns or c in ['Current_Company', 'Funnel_Stage', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Eligibility_Status']]
         master_df = df[available_cols]
         apps_df = master_df.copy().fillna("Not Provided")
 
@@ -79,30 +93,44 @@ if uploaded_file is not None:
             uniq_df = comb.drop_duplicates(subset=['Email Address'], keep='first') if 'Email Address' in comb.columns else comb
         uniq_df = uniq_df.fillna("Not Provided")
 
+        # --- RE-CONFIGURED METRIC PANEL DESIGN ---
         tab1, tab2 = st.tabs(["📈 View A: Total Applications Funnel", "👥 View B: Unique Applicants Funnel"])
+        
         with tab1:
             st.subheader("Application Funnel Summary")
-            t_a, s_a, w_a, r_a = len(apps_df), len(apps_df[apps_df['Funnel_Stage'] == "Shortlisted"]), len(apps_df[apps_df['Funnel_Stage'] == "Screening Pool"]), len(apps_df[apps_df['Funnel_Stage'] == "Rejected"])
+            t_a = len(apps_df)
+            e_a = len(apps_df[apps_df['Eligibility_Status'] == "Eligible"])
+            s_a = len(apps_df[apps_df['Funnel_Stage'] == "Shortlisted"])
+            r_a = len(apps_df[apps_df['Funnel_Stage'] == "Rejected"])
+            
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Total Applications", t_a)
-            col2.metric("Shortlisted / In-Progress", s_a)
-            col3.metric("Awaiting Screening", w_a)
+            col2.metric("Eligible Applications", e_a)
+            col3.metric("Shortlisted / In-Progress", s_a)
             col4.metric("Rejected Pool", r_a)
+            
             st.dataframe(apps_df)
             buf_a = io.BytesIO()
             with pd.ExcelWriter(buf_a, engine='openpyxl') as w: apps_df.to_excel(w, index=False, sheet_name='All Applications')
             st.download_button("📥 Export Total Applications", data=buf_a.getvalue(), file_name="total_applications.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            
         with tab2:
             st.subheader("Unique Applicant Funnel Summary")
-            t_u, s_u, w_u, r_u = len(uniq_df), len(uniq_df[uniq_df['Funnel_Stage'] == "Shortlisted"]), len(uniq_df[uniq_df['Funnel_Stage'] == "Screening Pool"]), len(uniq_df[uniq_df['Funnel_Stage'] == "Rejected"])
+            t_u = len(uniq_df)
+            e_u = len(uniq_df[uniq_df['Eligibility_Status'] == "Eligible"])
+            s_u = len(uniq_df[uniq_df['Funnel_Stage'] == "Shortlisted"])
+            r_u = len(uniq_df[uniq_df['Funnel_Stage'] == "Rejected"])
+            
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Total Unique Talent", t_u)
-            m2.metric("Shortlisted Candidates", s_u)
-            m3.metric("Awaiting Screening", w_u)
+            m2.metric("Eligible Unique Talent", e_u)
+            m3.metric("Shortlisted Candidates", s_u)
             m4.metric("Rejected Candidates", r_u)
+            
             st.dataframe(uniq_df)
             buf_b = io.BytesIO()
             with pd.ExcelWriter(buf_b, engine='openpyxl') as w: uniq_df.to_excel(w, index=False, sheet_name='Unique Applicants')
             st.download_button("📥 Export Unique Applicants", data=buf_b.getvalue(), file_name="unique_applicants.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            
     except Exception as e: st.error(f"An error occurred while compiling your funnel: {e}")
 else: st.info("Awaiting raw dataset upload to generate funnel pipelines.")
