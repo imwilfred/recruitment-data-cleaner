@@ -24,10 +24,10 @@ def render_tab(title, data, job):
     t = len(data)
     el_df = data[data['Eligibility_Status'] == "Eligible"]
     e = len(el_df)
-    s = len(el_df[el_df['Rank'] <= 9])
-    i = len(el_df[el_df['Rank'] <= 7])
-    o = len(el_df[el_df['Rank'] <= 5])
-    h = len(el_df[el_df['Rank'] == 1])
+    s = len(el_df[el_df['Rank'] <= 9]) if 'Rank' in el_df.columns else 0
+    i = len(el_df[el_df['Rank'] <= 7]) if 'Rank' in el_df.columns else 0
+    o = len(el_df[el_df['Rank'] <= 5]) if 'Rank' in el_df.columns else 0
+    h = len(el_df[el_df['Rank'] == 1]) if 'Rank' in el_df.columns else 0
     st.subheader(f"{title}: {'All Positions' if job == 'All Jobs' else job}")
     f_view, d_view = st.tabs(["🗺️ View Graphical Funnel Map", "📋 View Detailed Data Table"])
     with f_view: draw_funnel(t, e, s, i, o, h)
@@ -71,6 +71,7 @@ if file is not None:
             return "Ineligible"
         df['Eligibility_Status'] = df.apply(parse_el, axis=1)
 
+        # Precise 11-Tier Status Hierarchy mapping with lowercase fallback handling
         st_map = {
             "hired": 1, "hire in progress": 2, "offer in progress": 3, "verbal offer in progress": 4,
             "salary proposal in progress": 5, "interview in progress": 6, "interview reject": 7,
@@ -126,9 +127,6 @@ if file is not None:
         if selected_job != "All Jobs":
             apps_df, uniq_df = apps_df[apps_df['Job Name'] == selected_job], uniq_df[uniq_df['Job Name'] == selected_job]
         apps_df, uniq_df = apps_df[apps_df['Total Exp'] >= min_exp_input], uniq_df[uniq_df['Total Exp'] >= min_exp_input].fillna("Not Provided")
-
-        if 'Rank' in apps_df.columns: apps_df = apps_df.drop(columns=['Rank'])
-        if 'Rank' in uniq_df.columns: uniq_df = uniq_df.drop(columns=['Rank'])
 
         t1, t2 = st.tabs(["📈 View A: Total Applications Funnel", "👥 View B: Unique Applicants Funnel"])
         with t1: render_tab("Total Applications Funnel", apps_df, selected_job)
