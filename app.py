@@ -78,7 +78,7 @@ if file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
-        # --- FIX: ROBUST PARTIAL TEXT EDUCATION EXCLUSION ENGINE ---
+        # --- FIX: MULTI-SCHOOL EXTENSIVE SUPPRESSION PARSER ---
         def parse_edu(txt):
             defaults = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
             if pd.isna(txt) or not isinstance(txt, str) or txt.strip() == "": return defaults
@@ -90,22 +90,22 @@ if file is not None:
             
             sch, disc = "Not Listed", "Not Listed"
             skw = ["UNIVERSITY", "POLYTECHNIC", "INSTITUTE", "COLLEGE", "SCHOOL", "NUS", "NTU", "SMU", "SIT", "SUTD", "SUSS", "ACADEMY", "CENTRE", "CENTER", "FACULTY", "UNIVERSIDADE", "UNIVERSIDAD", "ECOLE", "UPF"]
-            # These qualification keywords will be checked as partial strings inside segments
             ikw = ["BACHELOR", "MASTER", "PHD", "DIPLOMA", "DEGREE", "HONOURS", "HONORS", "DISTINCTION", "CERTIFICATE", "BSC", "BENG", "MSC", "MBA", "CERTIFICATION", "GRADUATE", "EQUIVALENT"]
             
-            # Pass 1: Isolate global school names safely
+            # Pass 1: Grab the highest-indexed/primary school name listed
             for p in parts:
                 if any(k in p.upper() for k in skw):
                     sch = p
                     break
                     
-            # Pass 2: Select the longest phrase while enforcing partial text exclusions
+            # Pass 2: Select the absolute longest valid candidate string as the Discipline
             longest_len = 0
             for p in parts:
                 pu = p.upper()
                 if p == sch or re.search(r'\d{4}', p) or re.match(r'^\d+(\.\d+)?$', p): continue
-                # FIX: If ANY academic keyword is found anywhere inside the string segment, exclude it immediately
-                if any(k in pu for k in ikw) or len(p) <= 2: continue
+                
+                # FIX: Disqualify the segment immediately if it contains ANY academic indicator OR ANY school descriptor
+                if any(k in pu for k in ikw) or any(k in pu for k in skw) or len(p) <= 2: continue
                 
                 if len(p) > longest_len:
                     longest_len = len(p)
