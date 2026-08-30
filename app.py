@@ -4,19 +4,18 @@ st.title("📊 Interactive Recruitment Funnel & Data Cleaner")
 
 if "ukey" not in st.session_state: st.session_state["ukey"] = 0
 
-# --- UPDATED: BULLETPROOF CENTERING & TRUE INVERTED TRIANGLE LOOK ---
+# --- RE-LABELED VISUAL CORES FOR TRUTHFUL TALENT TRACKING ---
 def draw_funnel(t, e, s, i, o, h):
-    st.markdown("### 🗺️ Visual Pipeline Funnel")
+    st.markdown("### 🗺️ Visual Pipeline Funnel (Cumulative Advancement)")
     p = lambda v: (v / t * 100) if t > 0 else 0
     stg = [
-        {"n": "1. Total Applications / Inflow", "v": t, "w": "100%", "c": "#1E88E5"},
-        {"n": "2. Eligible Pool (SG Citizens)", "v": e, "w": "85%", "c": "#2196F3"},
-        {"n": "3. Shortlisted Stage", "v": s, "w": "70%", "c": "#42A5F5"},
-        {"n": "4. Interviewing Stage", "v": i, "w": "55%", "c": "#64B5F6"},
-        {"n": "5. Offered Stage (Clearance In-Progress)", "v": o, "w": "40%", "c": "#90CAF9"},
-        {"n": "6. Hired Pool (Funnel Success)", "v": h, "w": "25%", "c": "#BBDEFB"}
+        {"n": "1. Total Inflow / Intake Pool", "v": t, "w": "100%", "c": "#1E88E5"},
+        {"n": "2. Eligible Volume (SG Citizens)", "v": e, "w": "85%", "c": "#2196F3"},
+        {"n": "3. Advanced to Shortlist Stage", "v": s, "w": "70%", "c": "#42A5F5"},
+        {"n": "4. Advanced to Interview Loop", "v": i, "w": "55%", "c": "#64B5F6"},
+        {"n": "5. Advanced to Offer/Clearance", "v": o, "w": "40%", "c": "#90CAF9"},
+        {"n": "6. Hired / Cleared Pool", "v": h, "w": "25%", "c": "#BBDEFB"}
     ]
-    # Enforces hard center alignment on all browser screen sizes
     st.markdown("<div style='display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; margin:20px 0;'>", unsafe_allow_html=True)
     for s in stg:
         st.markdown(f"<div style='background-color:{s['c']}; width:{s['w']}; max-width:600px; margin:4px auto; padding:12px; border-radius:8px; text-align:center; color:#0D47A1; box-shadow:0 2px 4px rgba(0,0,0,0.1);'><strong style='font-size:15px;'>{s['n']}</strong><br/><span style='font-size:20px; font-weight:bold;'>{s['v']}</span> <span style='font-size:12px; font-style:italic;'>({p(s['v']):.1f}%)</span></div>", unsafe_allow_html=True)
