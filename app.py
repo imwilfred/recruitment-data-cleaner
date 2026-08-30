@@ -4,13 +4,12 @@ st.title("📊 Interactive Recruitment Funnel & Data Cleaner")
 
 if "ukey" not in st.session_state: st.session_state["ukey"] = 0
 
-# --- RE-LABELED VISUAL CORES FOR TRUTHFUL TALENT TRACKING ---
 def draw_funnel(t, e, s, i, o, h):
     st.markdown("### 🗺️ Visual Pipeline Funnel (Cumulative Advancement)")
     p = lambda v: (v / t * 100) if t > 0 else 0
     stg = [
         {"n": "1. Total Inflow / Intake Pool", "v": t, "w": "100%", "c": "#1E88E5"},
-        {"n": "2. Eligible Volume (SG Citizens)", "v": e, "w": "85%", "c": "#2196F3"},
+        {"n": "2. Eligible Volume (Confirmed SG Citizens)", "v": e, "w": "85%", "c": "#2196F3"},
         {"n": "3. Advanced to Shortlist Stage", "v": s, "w": "70%", "c": "#42A5F5"},
         {"n": "4. Advanced to Interview Loop", "v": i, "w": "55%", "c": "#64B5F6"},
         {"n": "5. Advanced to Offer/Clearance", "v": o, "w": "40%", "c": "#90CAF9"},
@@ -45,13 +44,13 @@ if file is not None:
         df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
         cc = ['Candidate Name', 'Email Address', 'NRIC Number', 'Application Status', 'Job Name', 'Citizenship', 'Country Of Birth']
         for c in cc:
-            if c in df.columns: df[c] = df[c].astype(str).str.strip()
+            if c in df.columns: df[c] = df[c].fillna("").astype(str).str.strip()
         if 'Candidate Name' in df.columns: df['Candidate Name'] = df['Candidate Name'].str.title()
         if 'Email Address' in df.columns: df['Email Address'] = df['Email Address'].str.lower()
         if 'NRIC Number' in df.columns: df['NRIC Number'] = df['NRIC Number'].str.upper()
         if 'Citizenship' in df.columns: df['Citizenship'] = df['Citizenship'].str.title()
         if 'Country Of Birth' in df.columns: df['Country Of Birth'] = df['Country Of Birth'].str.title()
-        df['Job Name'] = df['Job Name'].fillna("Unknown Role").astype(str).str.strip()
+        df['Job Name'] = df['Job Name'].replace("", "Unknown Role")
         df['X0PA Score'] = pd.to_numeric(df['X0PA Score'], errors='coerce').fillna(0)
         df['Total Exp'] = pd.to_numeric(df['Total Exp'], errors='coerce').fillna(0)
 
@@ -64,7 +63,8 @@ if file is not None:
         def parse_el(r):
             cz, cob = str(r.get('Citizenship', '')).lower(), str(r.get('Country Of Birth', '')).lower()
             if 'citizen' in cz or cz == 'singapore':
-                return "Ineligible (Exception)" if any(x in cob for x in ['china', 'myanmar', 'myanmr']) else "Eligible"
+                if any(x in cob for x in ['china', 'myanmar', 'myanmr']): return "Ineligible (Exception)"
+                return "Eligible"
             return "Ineligible"
         df['Eligibility_Status'] = df.apply(parse_el, axis=1)
 
