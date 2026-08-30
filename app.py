@@ -5,7 +5,7 @@ st.title("📊 Interactive Recruitment Funnel & Data Cleaner")
 if "ukey" not in st.session_state: st.session_state["ukey"] = 0
 
 def draw_funnel(t, e, s, i, o, h):
-    st.markdown("### 🗺️ Visual Pipeline Funnel (Cumulative Advancement)")
+    st.markdown("### 🗺️ Visual Pipeline Funnel (Strict Sequential Step-Down)")
     p = lambda v: (v / t * 100) if t > 0 else 0
     stg = [
         {"n": "1. Total Inflow / Intake Pool", "v": t, "w": "100%", "c": "#1E88E5"},
@@ -21,17 +21,21 @@ def draw_funnel(t, e, s, i, o, h):
     st.markdown("</div>", unsafe_allow_html=True)
 
 def render_tab(title, data, job):
-    t, e = len(data), len(data[data['Eligibility_Status'] == "Eligible"])
-    s, i, o = len(data[data['Rank'] <= 9]), len(data[data['Rank'] <= 7]), len(data[data['Rank'] <= 5])
-    h = len(data[data['Rank'] == 1])
+    t = len(data)
+    el_df = data[data['Eligibility_Status'] == "Eligible"]
+    e = len(el_df)
+    s = len(el_df[el_df['Rank'] <= 9])
+    i = len(el_df[el_df['Rank'] <= 7])
+    o = len(el_df[el_df['Rank'] <= 5])
+    h = len(el_df[el_df['Rank'] == 1])
     st.subheader(f"{title}: {'All Positions' if job == 'All Jobs' else job}")
     f_view, d_view = st.tabs(["🗺️ View Graphical Funnel Map", "📋 View Detailed Data Table"])
     with f_view: draw_funnel(t, e, s, i, o, h)
     with d_view:
-        grid = data.drop(columns=['Rank']) if 'Rank' in data.columns else data
-        st.dataframe(grid)
+        g = data.drop(columns=['Rank']) if 'Rank' in data.columns else data
+        st.dataframe(g)
         buf = io.BytesIO()
-        with pd.ExcelWriter(buf, engine='openpyxl') as w: grid.to_excel(w, index=False, sheet_name='Data')
+        with pd.ExcelWriter(buf, engine='openpyxl') as w: g.to_excel(w, index=False, sheet_name='Data')
         st.download_button(f"📥 Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 file = st.file_uploader("Upload raw file", type=["csv", "xlsx"], key=f"up_{st.session_state['ukey']}")
