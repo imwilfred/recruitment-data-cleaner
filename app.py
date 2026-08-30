@@ -78,7 +78,7 @@ if file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
-        # --- FULL SHEET SCAN ENGINE FOR EDUCATION ---
+        # --- GLOBAL CONTENT SWEEP WITH INTERNATIONAL SCHOOL MATCHING ---
         def parse_edu(txt):
             defaults = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
             if pd.isna(txt) or not isinstance(txt, str) or txt.strip() == "": return defaults
@@ -89,27 +89,29 @@ if file is not None:
             lvl = "PhD" + (" ➔ Master" if master else "") + (" ➔ Bachelor" if bach else "") if phd else ("Master" + (" ➔ Bachelor" if bach else "") if master else ("Bachelor" if bach else (" & ".join([w for w, c in [("Diploma", dip), ("A-Levels", alev)] if c]) if (dip or alev) else "Other / School")))
             
             sch, disc = "Not Listed", "Not Listed"
-            skw = ["UNIVERSITY", "POLYTECHNIC", "INSTITUTE", "COLLEGE", "SCHOOL", "NUS", "NTU", "SMU", "SIT", "SUTD", "SUSS", "ACADEMY"]
+            # Expanded keyword tracking array to capture global/international universities and centers
+            skw = ["UNIVERSITY", "POLYTECHNIC", "INSTITUTE", "COLLEGE", "SCHOOL", "NUS", "NTU", "SMU", "SIT", "SUTD", "SUSS", "ACADEMY", "CENTRE", "CENTER", "FACULTY", "UNIVERSIDADE", "UNIVERSIDAD", "ECOLE", "UPF"]
+            ikw = ["BACHELOR", "MASTER", "PHD", "DIPLOMA", "DEGREE", "HONOURS", "HONORS", "DISTINCTION", "CERTIFICATE", "BSC", "BENG", "MSC", "MBA", "CERTIFICATION", "GRADUATE"]
             
-            # Pass 1: Grab the true institution from the entire array string safely
+            # Pass 1: Isolate global school names safely across the row footprint
             for p in parts:
                 if any(k in p.upper() for k in skw):
                     sch = p
                     break
                     
-            # Pass 2: Extract the deepest discipline text string
+            # Pass 2: Select the absolute longest valid candidate string as the Discipline
+            longest_len = 0
             for p in parts:
-                pu = p.upper()
                 if p == sch or re.search(r'\d{4}', p) or re.match(r'^\d+(\.\d+)?$', p): continue
-                if len(p) > 3 and not any(pu == k for k in ["BACHELOR", "MASTER", "PHD", "DIPLOMA", "DEGREE", "HONOURS", "DISTINCTION"]):
-                    # Keep the record if it adds valuable descriptor terms (like Engineering/Science)
-                    if disc == "Not Listed" or "ENGINEER" in pu or "COMPUT" in pu or "SCIENCE" in pu:
-                        disc = p
+                if any(p.upper() == k for k in ikw) or len(p) <= 2: continue
+                
+                if len(p) > longest_len:
+                    longest_len = len(p)
+                    disc = p
                         
             if disc != "Not Listed":
-                # Clean up technical strings and trailing honors notes cleanly
-                disc = re.sub(r'^(Bachelor of|Master of|BSc|BEng|Diploma in|BSc Hons|Degree in)\s*', '', disc, flags=re.IGNORECASE)
-                disc = re.sub(r'[\-,]\s*(Honours|Honors|Distinction).*$', '', disc, flags=re.IGNORECASE).strip()
+                disc = re.sub(r'^(Bachelor of|Master of|BSc|BEng|Diploma in|BSc Hons|Degree in|Tecnologo Em|Tecnólogo Em)\s*', '', disc, flags=re.IGNORECASE)
+                disc = re.sub(r'[\-,]\s*(Honours|Honors|Distinction|Graduation).*$', '', disc, flags=re.IGNORECASE).strip()
                 for k in ["NTU", "NUS", "SMU", "SIT", "SUSS", "SUTD"]:
                     if disc.endswith(k): disc = disc[:-len(k)].strip()
                     
