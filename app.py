@@ -78,77 +78,47 @@ if file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
-        # --- SMART ADJACENT FIELD RE-PARSER ---
+        # --- FULL SHEET SCAN ENGINE FOR EDUCATION ---
         def parse_edu(txt):
             defaults = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
             if pd.isna(txt) or not isinstance(txt, str) or txt.strip() == "": return defaults
             parts = [p.strip() for p in txt.split('|') if p.strip()]
             u = txt.upper()
             
-            phd = "PHD" in u or "DOCTOR" in u
-            master = "MASTER" in u or "MSC" in u or "MBA" in u
-            bach = "BACHELOR" in u or "DEGREE" in u or "BSC" in u or "BENG" in u
-            dip = "DIPLOMA" in u or "POLYTECHNIC" in u
-            alev = "A LEVEL" in u or "ADVANCED LEVEL" in u or "JUNIOR COLLEGE" in u
-            
+            phd, master, bach, dip, alev = "PHD" in u or "DOCTOR" in u, "MASTER" in u or "MSC" in u or "MBA" in u, "BACHELOR" in u or "DEGREE" in u or "BSC" in u or "BENG" in u, "DIPLOMA" in u or "POLYTECHNIC" in u, "A LEVEL" in u or "ADVANCED LEVEL" in u or "JUNIOR COLLEGE" in u
             lvl = "PhD" + (" ➔ Master" if master else "") + (" ➔ Bachelor" if bach else "") if phd else ("Master" + (" ➔ Bachelor" if bach else "") if master else ("Bachelor" if bach else (" & ".join([w for w, c in [("Diploma", dip), ("A-Levels", alev)] if c]) if (dip or alev) else "Other / School")))
             
-            # Find the position index of the degree level keyword
-            t_kw = "PHD" if phd else ("MASTER" if master else ("BACHELOR" if bach else "DIPLOMA"))
-            t_idx = 0
-            for idx, part in enumerate(parts):
-                if t_kw in part.upper() or "DEGREE" in part.upper():
-                    t_idx = idx
+            sch, disc = "Not Listed", "Not Listed"
+            skw = ["UNIVERSITY", "POLYTECHNIC", "INSTITUTE", "COLLEGE", "SCHOOL", "NUS", "NTU", "SMU", "SIT", "SUTD", "SUSS", "ACADEMY"]
+            
+            # Pass 1: Grab the true institution from the entire array string safely
+            for p in parts:
+                if any(k in p.upper() for k in skw):
+                    sch = p
                     break
                     
-            try:
-                # In X0PA exports, Discipline is consistently placed either exactly before or exactly after the Tier keyword box
-                disc = "Not Listed"
-                sch = "Not Listed"
-                
-                # Check neighbors relative to target level index anchor
-                candidates = []
-                if t_idx - 1 >= 0: candidates.append(parts[t_idx - 1])
-                if t_idx + 1 < len(parts): candidates.append(parts[t_idx + 1])
-                if t_idx + 2 < len(parts): candidates.append(parts[t_idx + 2])
-                
-                skw = ["UNIVERSITY", "POLYTECHNIC", "INSTITUTE", "COLLEGE", "SCHOOL", "NUS", "NTU", "SMU", "SIT", "SUTD", "SUSS", "ACADEMY"]
-                ikw = ["BACHELOR", "MASTER", "PHD", "DIPLOMA", "DEGREE", "HONOURS", "HONORS", "DISTINCTION", "CERTIFICATE", "BSC", "BENG", "MSC", "MBA", "CERTIFICATION"]
-                
-                for c in candidates:
-                    cu = c.upper()
-                    if re.search(r'\d{4}', c) or re.match(r'^\d+(\.\d+)?$', c): continue
-                    if any(k in cu for k in skw):
-                        sch = c
-                    elif not any(k in cu for k in ikw) and len(c) > 2 and disc == "Not Listed":
-                        disc = c
+            # Pass 2: Extract the deepest discipline text string
+            for p in parts:
+                pu = p.upper()
+                if p == sch or re.search(r'\d{4}', p) or re.match(r'^\d+(\.\d+)?$', p): continue
+                if len(p) > 3 and not any(pu == k for k in ["BACHELOR", "MASTER", "PHD", "DIPLOMA", "DEGREE", "HONOURS", "DISTINCTION"]):
+                    # Keep the record if it adds valuable descriptor terms (like Engineering/Science)
+                    if disc == "Not Listed" or "ENGINEER" in pu or "COMPUT" in pu or "SCIENCE" in pu:
+                        disc = p
                         
-                # Fallback sweep to capture raw titles if fields are shifted internally
-                if disc == "Not Listed" and t_idx < len(parts):
-                    disc = parts[0]
-                    
-                # Clean clean-up wrappers
-                clean_patt = r'(Bachelor of|Master of|BSc|BEng|Diploma in|BSc Hons|Degree in|Honours Distinction|Electrical and Electronic Engineering-)\s*'
-                disc = re.sub(clean_patt, '', disc, flags=re.IGNORECASE)
-                disc = disc.split('-')[0].strip() # Clean layout cuts
-                
-                # Clean trailing institutional text noise tags from discipline cells
+            if disc != "Not Listed":
+                # Clean up technical strings and trailing honors notes cleanly
+                disc = re.sub(r'^(Bachelor of|Master of|BSc|BEng|Diploma in|BSc Hons|Degree in)\s*', '', disc, flags=re.IGNORECASE)
+                disc = re.sub(r'[\-,]\s*(Honours|Honors|Distinction).*$', '', disc, flags=re.IGNORECASE).strip()
                 for k in ["NTU", "NUS", "SMU", "SIT", "SUSS", "SUTD"]:
                     if disc.endswith(k): disc = disc[:-len(k)].strip()
                     
-                return {
-                    "l": lvl, 
-                    "d": disc.title() if disc != "" else "Not Listed", 
-                    "s": sch.title() if sch != "Not Listed" else "Not Listed"
-                }
-            except: 
-                return {"l": lvl, "d": "Not Listed", "s": "Not Listed"}
+            return {"l": lvl, "d": disc.title() if disc != "Not Listed" else "Not Listed", "s": sch.title() if sch != "Not Listed" else "Not Listed"}
 
         if 'Candidate Education' in df.columns:
             mapped = df['Candidate Education'].apply(parse_edu)
             df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = [i['l'] for i in mapped], [i['d'] for i in mapped], [i['s'] for i in mapped]
-        else: 
-            df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = "Not Provided", "Not Listed", "Not Listed"
+        else: df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = "Not Provided", "Not Listed", "Not Listed"
 
         layout = ['Candidate Name', 'Email Address', 'NRIC Number', 'Mobile Number', 'Citizenship', 'Country Of Birth', 'Eligibility_Status', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Current_Company', 'Total Exp', 'X0PA Score', 'Application Status', 'App Date', 'Job Id', 'Job Name', 'Job Status', 'Application Source', 'Rank']
         av_cols = [c for c in layout if c in df.columns or c in ['Current_Company', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Eligibility_Status', 'Rank']]
