@@ -39,7 +39,6 @@ def render_tab(title, data, job):
         st.download_button(f"📥 Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 file = st.file_uploader("Upload raw file", type=["csv", "xlsx"], key=f"up_{st.session_state['ukey']}")
-
 if file is not None:
     if st.button("🗑️ Clear Current File & Restart", type="primary"):
         st.session_state["ukey"] += 1
@@ -72,12 +71,13 @@ if file is not None:
             return "Ineligible"
         df['Eligibility_Status'] = df.apply(parse_el, axis=1)
 
+        # Case-insensitive robust text status mapper
         st_map = {
-            "Hired": 1, "Hire in Progress": 2, "Offer in Progress": 3, "Verbal Offer in Progress": 4,
-            "Salary Proposal in Progress": 5, "Interview in Progress": 6, "Interview Reject": 7,
-            "Post Screening Slot in Progress": 8, "Post Screening Slot Reject": 9, "Screening in Progress": 10, "Screening Reject": 11
+            "hired": 1, "hire in progress": 2, "offer in progress": 3, "verbal offer in progress": 4,
+            "salary proposal in progress": 5, "interview in progress": 6, "interview reject": 7,
+            "post screening slot in progress": 8, "post screening slot reject": 9, "screening in progress": 10, "screening reject": 11
         }
-        df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip(), 12))
+        df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
         def parse_edu(txt):
             defaults = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
