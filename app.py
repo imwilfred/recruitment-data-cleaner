@@ -71,7 +71,6 @@ if file is not None:
             return "Ineligible"
         df['Eligibility_Status'] = df.apply(parse_el, axis=1)
 
-        # Case-insensitive robust text status mapper
         st_map = {
             "hired": 1, "hire in progress": 2, "offer in progress": 3, "verbal offer in progress": 4,
             "salary proposal in progress": 5, "interview in progress": 6, "interview reject": 7,
@@ -112,18 +111,24 @@ if file is not None:
         min_exp_input = st.sidebar.slider("Minimum Years of Experience", 0.0, max_exp if not pd.isna(max_exp) else 10.0, 0.0, step=0.5)
 
         apps_df = master_df.copy().fillna("Not Provided")
-        uniq_df = master_df.copy().sort_values(by=['Rank', 'X0PA Score'], ascending=[True, False])
-        for col in ['Email Address', 'NRIC Number']:
-            if col in uniq_df.columns: uniq_df[col] = uniq_df[col].replace(['nan', 'none', 'na', ''], pd.NA)
-        if 'Email Address' in uniq_df.columns or 'NRIC Number' in uniq_df.columns:
-            has_n = uniq_df[uniq_df['NRIC Number'].notna()]
-            no_n = uniq_df[uniq_df['NRIC Number'].isna()]
-            if 'NRIC Number' in uniq_df.columns: has_n = has_n.drop_duplicates(subset=['NRIC Number'], keep='first')
-            uniq_df = pd.concat([has_n, no_n]).drop_duplicates(subset=['Email Address'], keep='first')
+        
+        # --- EXPLICIT CONDITIONAL DEDUPLICATION ENGINE ---
+        u_build = master_df.copy().sort_values(by=['Rank', 'X0PA Score'], ascending=[True, False])
+        u_build['NRIC Number'] = u_build['NRIC Number'].replace("", pd.NA)
+        
+        has_nric = u_build[u_build['NRIC Number'].notna()].drop_duplicates(subset=['NRIC Number'], keep='first')
+        no_nric = u_build[u_build['NRIC Number'].isna()]
+        
+        pass1_df = pd.concat([has_nric, no_nric])
+        pass1_df['Email Address'] = pass1_df['Email Address'].replace("", pd.NA)
+        uniq_df = pass1_df.drop_duplicates(subset=['Email Address'], keep='first')
 
         if selected_job != "All Jobs":
             apps_df, uniq_df = apps_df[apps_df['Job Name'] == selected_job], uniq_df[uniq_df['Job Name'] == selected_job]
         apps_df, uniq_df = apps_df[apps_df['Total Exp'] >= min_exp_input], uniq_df[uniq_df['Total Exp'] >= min_exp_input].fillna("Not Provided")
+
+        if 'Rank' in apps_df.columns: apps_df = apps_df.drop(columns=['Rank'])
+        if 'Rank' in uniq_df.columns: uniq_df = uniq_df.drop(columns=['Rank'])
 
         t1, t2 = st.tabs(["📈 View A: Total Applications Funnel", "👥 View B: Unique Applicants Funnel"])
         with t1: render_tab("Total Applications Funnel", apps_df, selected_job)
