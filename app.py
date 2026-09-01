@@ -78,7 +78,6 @@ if file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
-        # --- FIX: MULTI-SCHOOL EXTENSIVE SUPPRESSION PARSER ---
         def parse_edu(txt):
             defaults = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
             if pd.isna(txt) or not isinstance(txt, str) or txt.strip() == "": return defaults
@@ -92,21 +91,16 @@ if file is not None:
             skw = ["UNIVERSITY", "POLYTECHNIC", "INSTITUTE", "COLLEGE", "SCHOOL", "NUS", "NTU", "SMU", "SIT", "SUTD", "SUSS", "ACADEMY", "CENTRE", "CENTER", "FACULTY", "UNIVERSIDADE", "UNIVERSIDAD", "ECOLE", "UPF"]
             ikw = ["BACHELOR", "MASTER", "PHD", "DIPLOMA", "DEGREE", "HONOURS", "HONORS", "DISTINCTION", "CERTIFICATE", "BSC", "BENG", "MSC", "MBA", "CERTIFICATION", "GRADUATE", "EQUIVALENT"]
             
-            # Pass 1: Grab the highest-indexed/primary school name listed
             for p in parts:
                 if any(k in p.upper() for k in skw):
                     sch = p
                     break
                     
-            # Pass 2: Select the absolute longest valid candidate string as the Discipline
             longest_len = 0
             for p in parts:
                 pu = p.upper()
                 if p == sch or re.search(r'\d{4}', p) or re.match(r'^\d+(\.\d+)?$', p): continue
-                
-                # FIX: Disqualify the segment immediately if it contains ANY academic indicator OR ANY school descriptor
                 if any(k in pu for k in ikw) or any(k in pu for k in skw) or len(p) <= 2: continue
-                
                 if len(p) > longest_len:
                     longest_len = len(p)
                     disc = p
@@ -135,16 +129,21 @@ if file is not None:
 
         apps_df = master_df.copy().fillna("Not Provided")
         
-        # --- EXPLICIT CONDITIONAL DEDUPLICATION ENGINE ---
+        # --- FIXED CONDITIONAL COMPOSITE DEDUPLICATION ENGINE ---
         u_build = master_df.copy().sort_values(by=['Rank', 'X0PA Score'], ascending=[True, False])
         u_build['NRIC Number'] = u_build['NRIC Number'].replace("", pd.NA)
         
-        has_nric = u_build[u_build['NRIC Number'].notna()].drop_duplicates(subset=['NRIC Number'], keep='first')
+        # FIX: Generate the background safe composite string key (Name + NRIC)
+        u_build['Comp_Key'] = u_build['Candidate Name'].astype(str).str.lower().str.replace(" ", "") + "_" + u_build['NRIC Number'].astype(str)
+        
+        has_nric = u_build[u_build['NRIC Number'].notna()].drop_duplicates(subset=['Comp_Key'], keep='first')
         no_nric = u_build[u_build['NRIC Number'].isna()]
         
         pass1_df = pd.concat([has_nric, no_nric])
         pass1_df['Email Address'] = pass1_df['Email Address'].replace("", pd.NA)
         uniq_df = pass1_df.drop_duplicates(subset=['Email Address'], keep='first')
+        
+        if 'Comp_Key' in uniq_df.columns: uniq_df = uniq_df.drop(columns=['Comp_Key'])
 
         if selected_job != "All Jobs":
             apps_df, uniq_df = apps_df[apps_df['Job Name'] == selected_job], uniq_df[uniq_df['Job Name'] == selected_job]
