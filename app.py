@@ -44,9 +44,8 @@ def parse_edu(txt):
         disc = re.sub(r'[\-,]\s*(Honours|Honors|Distinction|Graduation).*$', '', disc, flags=re.IGNORECASE).strip()
         for k in ["NTU", "NUS", "SMU", "SIT", "SUSS", "SUTD"]:
             if disc.endswith(k): disc = disc[:-len(k)].strip()
-    return {"l": lvl, "d": disc.title() if disc != "Not Listed" else "Not Listed", "s": sch.title() if sch != "Not Listed" else "Not Listed"}
-
-def render_tab(title, data, job, domain):
+    return {"l": lvl, "d": disc.title() if disc != "Not Listed" else "Not Listed"
+    def render_tab(title, data, job, domain):
     t = len(data)
     el_df = data[data['Eligibility_Status'] == "Eligible"]
     e = len(el_df)
@@ -63,7 +62,8 @@ def render_tab(title, data, job, domain):
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine='openpyxl') as w: g.to_excel(w, index=False, sheet_name='Data')
         st.download_button(f"📥 Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        st.sidebar.header("📁 Reference Uploads")
+
+st.sidebar.header("📁 Reference Uploads")
 ref_file = st.sidebar.file_uploader("1. Upload Job Mapping File", type=["csv", "xlsx"])
 
 if ref_file is not None:
@@ -86,8 +86,7 @@ if ref_file is not None:
 
 if st.session_state["map_df_stored"] is None:
     st.sidebar.info("💡 Tip: Upload reference map above to unlock structural domain filters.")
-
-st.sidebar.markdown("---")
+    st.sidebar.markdown("---")
 st.sidebar.header("🔍 Funnel Controls")
 file = st.file_uploader("2. Upload Raw Candidate File", type=["csv", "xlsx"], key=f"up_{st.session_state['ukey']}")
 
@@ -97,6 +96,10 @@ if file is not None:
         st.rerun()
     try:
         df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
+        df.columns = [str(c).strip() for c in df.columns]
+        t_job_col = next((c for c in df.columns if 'JOB' in c.upper() and 'DOMAIN' not in c.upper()), 'Job Name')
+        if t_job_col != 'Job Name': df = df.rename(columns={t_job_col: 'Job Name'})
+        
         cc = ['Candidate Name', 'Email Address', 'NRIC Number', 'Application Status', 'Job Name', 'Citizenship', 'Country Of Birth']
         for c in cc:
             if c in df.columns: df[c] = df[c].fillna("").astype(str).str.strip()
@@ -153,7 +156,7 @@ if file is not None:
         else: df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = "Not Provided", "Not Listed", "Not Listed"
 
         layout = ['Candidate Name', 'Email Address', 'NRIC Number', 'Mobile Number', 'Citizenship', 'Country Of Birth', 'Eligibility_Status', 'Job Name', 'Job_Domain', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Application Status', 'X0PA Score', 'Total Exp', 'Rank']
-        av_cols = [c for c in layout if c in df.columns or c in ['Highest_Education', 'Primary_Discipline', 'Institution', 'Eligibility_Status', 'Rank', 'Job_Domain']]
+        av_cols = [c for c in layout if c in df.columns or c in ['Highest_Education', 'Primary_Discipline', 'Institution', 'Eligibility_Status', 'Rank', 'Job_Domain', 'Job Name']]
         master_df = df[av_cols]
 
         domain_list = ["All Domains"] + sorted(list(master_df['Job_Domain'].unique()))
