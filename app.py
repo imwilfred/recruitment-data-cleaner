@@ -2,7 +2,9 @@ import streamlit as st, pandas as pd, re, io
 st.set_page_config(page_title="Funnel", layout="wide")
 st.title("📊 Interactive Recruitment Funnel & Data Cleaner")
 
+# Initialize persistent background session memory trackers for hot reloads
 if "ukey" not in st.session_state: st.session_state["ukey"] = 0
+if "map_data" not in st.session_state: st.session_state["map_data"] = None
 
 def draw_funnel(t, e, s, i, o, h):
     st.markdown("### 🗺️ Visual Pipeline Funnel (Strict Sequential Step-Down)")
@@ -20,7 +22,7 @@ def draw_funnel(t, e, s, i, o, h):
         st.markdown(f"<div style='background-color:{s['c']}; width:{s['w']}; max-width:600px; margin:4px auto; padding:12px; border-radius:8px; text-align:center; color:#0D47A1; box-shadow:0 2px 4px rgba(0,0,0,0.1);'><strong style='font-size:15px;'>{s['n']}</strong><br/><span style='font-size:20px; font-weight:bold;'>{s['v']}</span> <span style='font-size:12px; font-style:italic;'>({p(s['v']):.1f}%)</span></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-def render_tab(title, data, job):
+def render_tab(title, data, job, domain):
     t = len(data)
     el_df = data[data['Eligibility_Status'] == "Eligible"]
     e = len(el_df)
@@ -28,7 +30,7 @@ def render_tab(title, data, job):
     i = len(el_df[el_df['Rank'] <= 7]) if 'Rank' in el_df.columns else 0
     o = len(el_df[el_df['Rank'] <= 5]) if 'Rank' in el_df.columns else 0
     h = len(el_df[el_df['Rank'] == 1]) if 'Rank' in el_df.columns else 0
-    st.subheader(f"{title}: {'All Positions' if job == 'All Jobs' else job}")
+    st.subheader(f"{title}: {f'All Positions ({domain})' if job == 'All Jobs' else f'{job} ({domain})'}")
     f_view, d_view = st.tabs(["🗺️ View Graphical Funnel Map", "📋 View Detailed Data Table"])
     with f_view: draw_funnel(t, e, s, i, o, h)
     with d_view:
@@ -38,9 +40,29 @@ def render_tab(title, data, job):
         with pd.ExcelWriter(buf, engine='openpyxl') as w: g.to_excel(w, index=False, sheet_name='Data')
         st.download_button(f"📥 Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-file = st.file_uploader("Upload raw file", type=["csv", "xlsx"], key=f"up_{st.session_state['ukey']}")
+st.sidebar.header("📁 Reference Uploads")
+ref_file = st.sidebar.file_uploader("1. Upload Job Mapping File", type=["csv", "xlsx"])
+
+if ref_file is not None:
+    try:
+        ref_df = pd.read_csv(ref_file) if ref_file.name.endswith('.csv') else pd.read_excel(ref_file)
+        ref_df.columns = [str(c).strip().title() for c in ref_df.columns]
+        dom_col = 'Domains' if 'Domains' in ref_df.columns else ('Domain Tagging' if 'Domain Tagging' in ref_df.columns else None)
+        if 'Job' in ref_df.columns and dom_col:
+            ref_df['Job_Key'] = ref_df['Job'].astype(str).str.strip().str.upper()
+            st.session_state["map_data"] = dict(zip(ref_df['Job_Key'], ref_df[dom_col].astype(str).str.strip()))
+            st.sidebar.success("✅ Job Map Linked!")
+        else: st.sidebar.error("Error: Missing 'Job' or 'Domains' headers.")
+    except Exception as err: st.sidebar.error(f"Error: {err}")
+
+if st.session_state["map_data"] is None:
+    st.sidebar.info("💡 Tip: Upload reference map above to unlock structural domain filters.")
+
+st.sidebar.markdown("---")
+st.sidebar.header("🔍 Funnel Controls")
+file = st.file_uploader("2. Upload Raw Candidate File", type=["csv", "xlsx"], key=f"up_{st.session_state['ukey']}")
 if file is not None:
-    if st.button("🗑️ Clear Current File & Restart", type="primary"):
+    if st.button("🗑️ Clear Candidate File & Restart", type="primary"):
         st.session_state["ukey"] += 1
         st.rerun()
     try:
@@ -78,39 +100,31 @@ if file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
+        df['Job_Domain'] = df['Job Name'].apply(lambda x: st.session_state["map_data"].get(str(x).strip().upper(), "Unmapped Role") if st.session_state["map_data"] is not None else "Map File Missing")
+
         def parse_edu(txt):
             defaults = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
             if pd.isna(txt) or not isinstance(txt, str) or txt.strip() == "": return defaults
             parts = [p.strip() for p in txt.split('|') if p.strip()]
             u = txt.upper()
-            
             phd, master, bach, dip, alev = "PHD" in u or "DOCTOR" in u, "MASTER" in u or "MSC" in u or "MBA" in u, "BACHELOR" in u or "DEGREE" in u or "BSC" in u or "BENG" in u, "DIPLOMA" in u or "POLYTECHNIC" in u, "A LEVEL" in u or "ADVANCED LEVEL" in u or "JUNIOR COLLEGE" in u
             lvl = "PhD" + (" ➔ Master" if master else "") + (" ➔ Bachelor" if bach else "") if phd else ("Master" + (" ➔ Bachelor" if bach else "") if master else ("Bachelor" if bach else (" & ".join([w for w, c in [("Diploma", dip), ("A-Levels", alev)] if c]) if (dip or alev) else "Other / School")))
-            
             sch, disc = "Not Listed", "Not Listed"
             skw = ["UNIVERSITY", "POLYTECHNIC", "INSTITUTE", "COLLEGE", "SCHOOL", "NUS", "NTU", "SMU", "SIT", "SUTD", "SUSS", "ACADEMY", "CENTRE", "CENTER", "FACULTY", "UNIVERSIDADE", "UNIVERSIDAD", "ECOLE", "UPF"]
             ikw = ["BACHELOR", "MASTER", "PHD", "DIPLOMA", "DEGREE", "HONOURS", "HONORS", "DISTINCTION", "CERTIFICATE", "BSC", "BENG", "MSC", "MBA", "CERTIFICATION", "GRADUATE", "EQUIVALENT"]
-            
             for p in parts:
-                if any(k in p.upper() for k in skw):
-                    sch = p
-                    break
-                    
+                if any(k in p.upper() for k in skw): sch = p; break
             longest_len = 0
             for p in parts:
                 pu = p.upper()
                 if p == sch or re.search(r'\d{4}', p) or re.match(r'^\d+(\.\d+)?$', p): continue
                 if any(k in pu for k in ikw) or any(k in pu for k in skw) or len(p) <= 2: continue
-                if len(p) > longest_len:
-                    longest_len = len(p)
-                    disc = p
-                        
+                if len(p) > longest_len: longest_len = len(p); disc = p
             if disc != "Not Listed":
                 disc = re.sub(r'^(Bachelor of|Master of|BSc|BEng|Diploma in|BSc Hons|Degree in|Tecnologo Em|Tecnólogo Em)\s*', '', disc, flags=re.IGNORECASE)
                 disc = re.sub(r'[\-,]\s*(Honours|Honors|Distinction|Graduation).*$', '', disc, flags=re.IGNORECASE).strip()
                 for k in ["NTU", "NUS", "SMU", "SIT", "SUSS", "SUTD"]:
                     if disc.endswith(k): disc = disc[:-len(k)].strip()
-                    
             return {"l": lvl, "d": disc.title() if disc != "Not Listed" else "Not Listed", "s": sch.title() if sch != "Not Listed" else "Not Listed"}
 
         if 'Candidate Education' in df.columns:
@@ -118,39 +132,40 @@ if file is not None:
             df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = [i['l'] for i in mapped], [i['d'] for i in mapped], [i['s'] for i in mapped]
         else: df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = "Not Provided", "Not Listed", "Not Listed"
 
-        layout = ['Candidate Name', 'Email Address', 'NRIC Number', 'Mobile Number', 'Citizenship', 'Country Of Birth', 'Eligibility_Status', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Current_Company', 'Total Exp', 'X0PA Score', 'Application Status', 'App Date', 'Job Id', 'Job Name', 'Job Status', 'Application Source', 'Rank']
-        av_cols = [c for c in layout if c in df.columns or c in ['Current_Company', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Eligibility_Status', 'Rank']]
+        layout = ['Candidate Name', 'Email Address', 'NRIC Number', 'Mobile Number', 'Citizenship', 'Country Of Birth', 'Eligibility_Status', 'Job_Domain', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Current_Company', 'Total Exp', 'X0PA Score', 'Application Status', 'App Date', 'Job Id', 'Job Name', 'Job Status', 'Application Source', 'Rank']
+        av_cols = [c for c in layout if c in df.columns or c in ['Current_Company', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Eligibility_Status', 'Rank', 'Job_Domain']]
         master_df = df[av_cols]
 
-        st.sidebar.header("🔍 Funnel Controls")
-        selected_job = st.sidebar.selectbox("Filter by Job Requisition", ["All Jobs"] + sorted(list(master_df['Job Name'].unique())))
+        domain_list = ["All Domains"] + sorted(list(master_df['Job_Domain'].unique()))
+        selected_domain = st.sidebar.selectbox("Filter by Domain Track", domain_list)
+        
+        filtered_job_source = master_df if selected_domain == "All Domains" else master_df[master_df['Job_Domain'] == selected_domain]
+        job_list = ["All Jobs"] + sorted(list(filtered_job_source['Job Name'].unique()))
+        selected_job = st.sidebar.selectbox("Filter by Job Requisition", job_list)
+        
         max_exp = float(master_df['Total Exp'].max()) if 'Total Exp' in master_df.columns and len(master_df) > 0 else 10.0
         min_exp_input = st.sidebar.slider("Minimum Years of Experience", 0.0, max_exp if not pd.isna(max_exp) else 10.0, 0.0, step=0.5)
 
         apps_df = master_df.copy().fillna("Not Provided")
-        
-        # --- FIXED CONDITIONAL COMPOSITE DEDUPLICATION ENGINE ---
         u_build = master_df.copy().sort_values(by=['Rank', 'X0PA Score'], ascending=[True, False])
         u_build['NRIC Number'] = u_build['NRIC Number'].replace("", pd.NA)
-        
-        # FIX: Generate the background safe composite string key (Name + NRIC)
         u_build['Comp_Key'] = u_build['Candidate Name'].astype(str).str.lower().str.replace(" ", "") + "_" + u_build['NRIC Number'].astype(str)
         
         has_nric = u_build[u_build['NRIC Number'].notna()].drop_duplicates(subset=['Comp_Key'], keep='first')
         no_nric = u_build[u_build['NRIC Number'].isna()]
-        
         pass1_df = pd.concat([has_nric, no_nric])
         pass1_df['Email Address'] = pass1_df['Email Address'].replace("", pd.NA)
         uniq_df = pass1_df.drop_duplicates(subset=['Email Address'], keep='first')
-        
         if 'Comp_Key' in uniq_df.columns: uniq_df = uniq_df.drop(columns=['Comp_Key'])
 
+        if selected_domain != "All Domains":
+            apps_df, uniq_df = apps_df[apps_df['Job_Domain'] == selected_domain], uniq_df[uniq_df['Job_Domain'] == selected_domain]
         if selected_job != "All Jobs":
             apps_df, uniq_df = apps_df[apps_df['Job Name'] == selected_job], uniq_df[uniq_df['Job Name'] == selected_job]
         apps_df, uniq_df = apps_df[apps_df['Total Exp'] >= min_exp_input], uniq_df[uniq_df['Total Exp'] >= min_exp_input].fillna("Not Provided")
 
         t1, t2 = st.tabs(["📈 View A: Total Applications Funnel", "👥 View B: Unique Applicants Funnel"])
-        with t1: render_tab("Total Applications Funnel", apps_df, selected_job)
-        with t2: render_tab("Unique Applicants Funnel", uniq_df, selected_job)
+        with t1: render_tab("Total Applications Funnel", apps_df, selected_job, selected_domain)
+        with t2: render_tab("Unique Applicants Funnel", uniq_df, selected_job, selected_domain)
     except Exception as e: st.error(f"Error compiling funnel: {e}")
 else: st.info("Awaiting raw dataset upload to generate funnel pipelines.")
