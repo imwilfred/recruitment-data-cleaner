@@ -81,7 +81,7 @@ if r_file is not None:
             r_df = r_df.sort_values(by='K_Len', ascending=False)
             st.session_state["m_df"] = r_df[['J_Cln', dm_c]].rename(columns={dm_c: 'Domain_Ext'}).drop_duplicates()
             st.sidebar.success("✅ Job Master Reference Linked!")
-    except Exception as err: st.sidebar.error(f"Error: {err}")
+    except Exception as err: st.sidebar.header(f"Error reading map: {err}")
 
 if st.session_state["m_df"] is None:
     st.sidebar.info("💡 Tip: Upload reference map above to unlock structural domain filters.")
@@ -132,7 +132,6 @@ if file is not None:
                     rk = str(r['J_Cln']).replace('/', '')
                     if rk in ck:
                         v = str(r['Domain_Ext']).strip()
-                        # FIX: Clean replacement string loop attribute mismatch error completely
                         return v.upper() if v.upper() in ["PRM", "PCP", "ESP", "AESP", "IT"] else v.title()
             ju = str(jn).upper()
             if any(k in ju for k in ["SOFTWARE", "DEVELOPER", "CYBER", "CLOUD", "DATA", "AI", "ROBOTICS", "NETWORK", "SERVER", "UX", "DEVSECOPS"]): return "Digital"
