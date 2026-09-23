@@ -143,6 +143,7 @@ if file is not None:
             if any(k in j_up for k in corp_kw): return "Corporate"
             return "Engineering" if ("ENGINEER" in j_up or "ANALYST" in j_up) else "Corporate"
             
+        df['Eligibility_Status'] = df.apply(lambda r: "Eligible" if "CITIZEN" in str(r.get('Citizenship', '')).upper() or str(r.get('Citizenship', '')).upper() == 'SINGAPORE' else "Ineligible", axis=1)
         df['Job_Domain'] = df['Job Name'].apply(match_domain_row)
 
         if 'Candidate Education' in df.columns:
@@ -151,7 +152,7 @@ if file is not None:
             df['Institution'] = df['Candidate Education'].apply(lambda x: parse_edu(x)['s'])
         else: df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = "Not Provided", "Not Listed", "Not Listed"
 
-        layout = ['Candidate Name', 'Email Address', 'NRIC Number', 'Mobile Number', 'Citizenship', 'Country Of Birth', 'Eligibility_Status', 'Job_Domain', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Application Status', 'X0PA Score', 'Total Exp', 'Rank']
+        layout = ['Candidate Name', 'Email Address', 'NRIC Number', 'Mobile Number', 'Citizenship', 'Country Of Birth', 'Eligibility_Status', 'Job Name', 'Job_Domain', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Application Status', 'X0PA Score', 'Total Exp', 'Rank']
         av_cols = [c for c in layout if c in df.columns or c in ['Highest_Education', 'Primary_Discipline', 'Institution', 'Eligibility_Status', 'Rank', 'Job_Domain']]
         master_df = df[av_cols]
 
