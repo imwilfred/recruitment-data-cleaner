@@ -52,13 +52,16 @@ if ref_file is not None:
         job_col = next((c for c in ref_df.columns if 'JOB' in c.upper()), None)
         
         if job_col and dom_col:
-            # Universal text cleaner for dictionary creation
             ref_df['Job_Clean'] = ref_df[job_col].astype(str).str.replace('\xa0', ' ').str.replace('\u200b', ' ')
             ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace('–', '-').str.replace('—', '-').str.replace('‒', '-')
             ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace('[', '').str.replace(']', '').str.replace('(', '').str.replace(')', '')
-            ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace(' ', '').str.strip().str.upper()
+            ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace(' ', '').str.replace('/', '').str.strip().str.upper()
             
-            st.session_state["map_data"] = dict(zip(ref_df['Job_Clean'], ref_df[dom_col].astype(str).str.strip().str.title()))
+            # --- FIX: SORT DICTIONARY BY KEY STRING LENGTH IN DESCENDING ORDER (GREEDY MATCH PRIORITY) ---
+            ref_df['Key_Len'] = ref_df['Job_Clean'].str.len()
+            ref_df = ref_df.sort_values(by='Key_Len', ascending=False)
+            
+            st.session_state["map_data"] = dict(zip(ref_df['Job_Clean'], ref_df[dom_col].astype(str).str.strip()))
             st.sidebar.success("✅ Job Map Linked Successfully!")
         else: st.sidebar.error("Error: Could not identify 'Job' or 'Domain' column headers.")
     except Exception as err: st.sidebar.error(f"Error: {err}")
@@ -108,25 +111,30 @@ if file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
-        # --- RE-ENGINEERED SUBSTRING CONTAINMENT LOOKUP MATCH PASS ---
+        # --- GREEDY SUBSTRING CONTAINER LOOKUP ENGINE LOOP ---
         def get_mapped_domain(jname):
             if st.session_state["map_data"] is not None:
-                # Standardize candidate titles cleanly by wiping spaces, hyphens, and slashes completely
                 c_key = str(jname).replace('\xa0', ' ').replace('\u200b', ' ')
                 c_key = c_key.replace('–', '-').replace('—', '-').replace('‒', '-')
                 c_key = c_key.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
                 c_key = c_key.replace(' ', '').replace('/', '').strip().upper()
                 
-                # Check exact matches first
+                raw_val = None
+                # Longest keys sort order protects hyper-specific strings from short keyword hijack overrides
                 if c_key in st.session_state["map_data"]:
-                    return st.session_state["map_data"][c_key]
-                
-                # Dynamic Substring Check: loop and match partial names to capture slashed variations smoothly
-                for dict_key, domain_val in st.session_state["map_data"].items():
-                    clean_dict_key = dict_key.replace('/', '')
-                    if c_key in clean_dict_key or clean_dict_key in c_key:
-                        return domain_val
-                        
+                    raw_val = st.session_state["map_data"][c_key]
+                else:
+                    for dict_key, domain_val in st.session_state["map_data"].items():
+                        clean_dict_key = dict_key.replace('/', '')
+                        if c_key in clean_dict_key or clean_dict_key in c_key:
+                            raw_val = domain_val
+                            break
+                            
+                if raw_val:
+                    if raw_val.upper() in ["PRM", "PCP", "ESP", "AESP", "IT"]: 
+                        return raw_val.upper()
+                    return raw_val.title()
+                    
                 return "Unmapped Role"
             return "Map File Missing"
         df['Job_Domain'] = df['Job Name'].apply(get_mapped_domain)
