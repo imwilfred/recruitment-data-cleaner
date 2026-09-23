@@ -46,14 +46,12 @@ ref_file = st.sidebar.file_uploader("1. Upload Job Mapping File", type=["csv", "
 if ref_file is not None:
     try:
         ref_df = pd.read_csv(ref_file) if ref_file.name.endswith('.csv') else pd.read_excel(ref_file)
-        # Deep space cleaning on reference headers to avoid column look-up bugs
         ref_df.columns = [str(c).replace('\xa0', ' ').strip().title() for c in ref_df.columns]
         
         dom_col = next((c for c in ref_df.columns if 'DOMAIN' in c.upper()), None)
         job_col = next((c for c in ref_df.columns if 'JOB' in c.upper()), None)
         
         if job_col and dom_col:
-            # FIX: Swapped out regex patterns for direct char strips to bypass regex string parsing bugs
             ref_df['Job_Clean'] = ref_df[job_col].astype(str).str.replace('\xa0', ' ').str.replace('\u200b', ' ')
             ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace('–', '-').str.replace('—', '-').str.replace('‒', '-')
             ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace('[', '').str.replace(']', '').str.replace('(', '').str.replace(')', '')
@@ -109,11 +107,11 @@ if file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
-        # FIX: Swapped out regex loop matching for precise individual text replaces here as well
+        # FIX: Removed the invalid .str attribute typo from the middle of the string replace sequence
         def get_mapped_domain(jname):
             if st.session_state["map_data"] is not None:
                 clean_key = str(jname).replace('\xa0', ' ').replace('\u200b', ' ')
-                clean_key = clean_key.replace('–', '-').replace('—', '-').str.replace('‒', '-')
+                clean_key = clean_key.replace('–', '-').replace('—', '-').replace('‒', '-')
                 clean_key = clean_key.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
                 clean_key = clean_key.strip().upper()
                 return st.session_state["map_data"].get(clean_key, "Unmapped Role")
