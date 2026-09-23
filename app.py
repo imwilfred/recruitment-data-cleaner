@@ -45,7 +45,8 @@ def parse_edu(txt):
         for k in ["NTU", "NUS", "SMU", "SIT", "SUSS", "SUTD"]:
             if disc.endswith(k): disc = disc[:-len(k)].strip()
     return {"l": lvl, "d": disc.title() if disc != "Not Listed" else "Not Listed", "s": sch.title() if sch != "Not Listed" else "Not Listed"}
-    def render_tab(title, data, job, domain):
+
+def render_tab(title, data, job, domain):
     t = len(data)
     el_df = data[data['Eligibility_Status'] == "Eligible"]
     e = len(el_df)
@@ -62,8 +63,7 @@ def parse_edu(txt):
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine='openpyxl') as w: g.to_excel(w, index=False, sheet_name='Data')
         st.download_button(f"📥 Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-st.sidebar.header("📁 Reference Uploads")
+  st.sidebar.header("📁 Reference Uploads")
 ref_file = st.sidebar.file_uploader("1. Upload Job Mapping File", type=["csv", "xlsx"])
 
 if ref_file is not None:
@@ -85,8 +85,8 @@ if ref_file is not None:
     except Exception as err: st.sidebar.error(f"Error: {err}")
 
 if st.session_state["map_df_stored"] is None:
-    st.sidebar.info("💡 Tip: Upload reference map above to unlock structural domain filters.")
-    st.sidebar.markdown("---")
+    st.sidebar.info("💡 Tip: Upload reference map above to unlock structural domain filters.")   
+st.sidebar.markdown("---")
 st.sidebar.header("🔍 Funnel Controls")
 file = st.file_uploader("2. Upload Raw Candidate File", type=["csv", "xlsx"], key=f"up_{st.session_state['ukey']}")
 
