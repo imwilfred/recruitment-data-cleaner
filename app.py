@@ -44,7 +44,7 @@ def parse_edu(txt):
         disc = re.sub(r'[\-,]\s*(Honours|Honors|Distinction|Graduation).*$', '', disc, flags=re.IGNORECASE).strip()
         for k in ["NTU", "NUS", "SMU", "SIT", "SUSS", "SUTD"]:
             if disc.endswith(k): disc = disc[:-len(k)].strip()
-    return {"l": lvl, "d": disc.title() if disc != "Not Listed" else "Not Listed"
+    return {"l": lvl, "d": disc.title() if disc != "Not Listed" else "Not Listed", "s": sch.title() if sch != "Not Listed" else "Not Listed"}
     def render_tab(title, data, job, domain):
     t = len(data)
     el_df = data[data['Eligibility_Status'] == "Eligible"]
