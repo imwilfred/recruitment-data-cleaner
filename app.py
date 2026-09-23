@@ -63,7 +63,7 @@ def tab(title, data, job, dom):
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine='openpyxl') as w: g.to_excel(w, index=False, sheet_name='Data')
         st.download_button(f"📥 Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-st.sidebar.header("📁 Reference Uploads")
+        st.sidebar.header("📁 Reference Uploads")
 r_file = st.sidebar.file_uploader("1. Upload Job Mapping File", type=["csv", "xlsx"])
 
 if r_file is not None:
