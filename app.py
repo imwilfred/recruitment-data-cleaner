@@ -21,24 +21,7 @@ def draw_funnel(t, e, s, i, o, h):
         st.markdown(f"<div style='background-color:{s['c']}; width:{s['w']}; max-width:600px; margin:4px auto; padding:12px; border-radius:8px; text-align:center; color:#0D47A1; box-shadow:0 2px 4px rgba(0,0,0,0.1);'><strong style='font-size:15px;'>{s['n']}</strong><br/><span style='font-size:20px; font-weight:bold;'>{s['v']}</span> <span style='font-size:12px;'>({p(s['v']):.1f}%)</span></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-def render_tab(title, data, job, domain):
-    t = len(data)
-    el_df = data[data['Eligibility_Status'] == "Eligible"]
-    e = len(el_df)
-    s = len(el_df[el_df['Rank'] <= 9]) if 'Rank' in el_df.columns else 0
-    i = len(el_df[el_df['Rank'] <= 7]) if 'Rank' in el_df.columns else 0
-    o = len(el_df[el_df['Rank'] <= 5]) if 'Rank' in el_df.columns else 0
-    h = len(el_df[el_df['Rank'] == 1]) if 'Rank' in el_df.columns else 0
-    st.subheader(f"{title}: {f'All Positions ({domain})' if job == 'All Jobs' else f'{job} ({domain})'}")
-    f_view, d_view = st.tabs(["🗺️ View Graphical Funnel Map", "📋 View Detailed Data Table"])
-    with f_view: draw_funnel(t, e, s, i, o, h)
-    with d_view:
-        g = data.drop(columns=['Rank']) if 'Rank' in data.columns else data
-        st.dataframe(g)
-        buf = io.BytesIO()
-        with pd.ExcelWriter(buf, engine='openpyxl') as w: g.to_excel(w, index=False, sheet_name='Data')
-        st.download_button(f"📥 Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        def parse_edu(txt):
+def parse_edu(txt):
     defaults = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
     if pd.isna(txt) or not isinstance(txt, str) or txt.strip() == "": return defaults
     parts = [p.strip() for p in txt.split('|') if p.strip()]
@@ -62,6 +45,23 @@ def render_tab(title, data, job, domain):
         for k in ["NTU", "NUS", "SMU", "SIT", "SUSS", "SUTD"]:
             if disc.endswith(k): disc = disc[:-len(k)].strip()
     return {"l": lvl, "d": disc.title() if disc != "Not Listed" else "Not Listed", "s": sch.title() if sch != "Not Listed" else "Not Listed"}
+    def render_tab(title, data, job, domain):
+    t = len(data)
+    el_df = data[data['Eligibility_Status'] == "Eligible"]
+    e = len(el_df)
+    s = len(el_df[el_df['Rank'] <= 9]) if 'Rank' in el_df.columns else 0
+    i = len(el_df[el_df['Rank'] <= 7]) if 'Rank' in el_df.columns else 0
+    o = len(el_df[el_df['Rank'] <= 5]) if 'Rank' in el_df.columns else 0
+    h = len(el_df[el_df['Rank'] == 1]) if 'Rank' in el_df.columns else 0
+    st.subheader(f"{title}: {f'All Positions ({domain})' if job == 'All Jobs' else f'{job} ({domain})'}")
+    f_view, d_view = st.tabs(["🗺️ View Graphical Funnel Map", "📋 View Detailed Data Table"])
+    with f_view: draw_funnel(t, e, s, i, o, h)
+    with d_view:
+        g = data.drop(columns=['Rank']) if 'Rank' in data.columns else data
+        st.dataframe(g)
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine='openpyxl') as w: g.to_excel(w, index=False, sheet_name='Data')
+        st.download_button(f"📥 Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 st.sidebar.header("📁 Reference Uploads")
 ref_file = st.sidebar.file_uploader("1. Upload Job Mapping File", type=["csv", "xlsx"])
