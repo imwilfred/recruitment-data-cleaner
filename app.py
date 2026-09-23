@@ -2,7 +2,6 @@ import streamlit as st, pandas as pd, re, io
 st.set_page_config(page_title="Funnel", layout="wide")
 st.title("📊 Interactive Recruitment Funnel & Data Cleaner")
 
-# Initialize persistent background session memory trackers for hot reloads
 if "ukey" not in st.session_state: st.session_state["ukey"] = 0
 if "map_data" not in st.session_state: st.session_state["map_data"] = None
 
@@ -46,14 +45,20 @@ ref_file = st.sidebar.file_uploader("1. Upload Job Mapping File", type=["csv", "
 if ref_file is not None:
     try:
         ref_df = pd.read_csv(ref_file) if ref_file.name.endswith('.csv') else pd.read_excel(ref_file)
-        ref_df.columns = [str(c).strip().title() for c in ref_df.columns]
-        dom_col = 'Domains' if 'Domains' in ref_df.columns else ('Domain Tagging' if 'Domain Tagging' in ref_df.columns else None)
-        if 'Job' in ref_df.columns and dom_col:
-            # FIX: Force strict uppercase conversion AND wipe out hidden leading/trailing white space strings
-            ref_df['Job_Key'] = ref_df['Job'].astype(str).str.strip().str.upper()
-            st.session_state["map_data"] = dict(zip(ref_df['Job_Key'], ref_df[dom_col].astype(str).str.strip().str.title()))
+        ref_df.columns = [str(c).replace(r'\xa0', ' ').strip().title() for c in ref_df.columns]
+        
+        dom_col = next((c for c in ref_df.columns if 'DOMAIN' in c.upper()), None)
+        job_col = next((c for c in ref_df.columns if 'JOB' in c.upper()), None)
+        
+        if job_col and dom_col:
+            # FIX: Normalize dashes, clear out brackets/parentheses, and strip extra whitespaces from reference values
+            ref_df['Job_Clean'] = ref_df[job_col].astype(str).str.replace(r'[\xa0\s\u200b]+', ' ', regex=True)
+            ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace(r'[–—‒–\-_]+', '-', regex=True)
+            ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace(r'[\[\]\(\)]', '', regex=True).str.strip().str.upper()
+            
+            st.session_state["map_data"] = dict(zip(ref_df['Job_Clean'], ref_df[dom_col].astype(str).str.strip().str.title()))
             st.sidebar.success("✅ Job Map Linked Successfully!")
-        else: st.sidebar.error("Error: Missing 'Job' or 'Domains' headers.")
+        else: st.sidebar.error("Error: Could not identify 'Job' or 'Domain' column headers.")
     except Exception as err: st.sidebar.error(f"Error: {err}")
 
 if st.session_state["map_data"] is None:
@@ -101,8 +106,16 @@ if file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
-        # FIX: Force exact uppercase and clean whitespace extraction during candidates match checks
-        df['Job_Domain'] = df['Job Name'].apply(lambda x: st.session_state["map_data"].get(str(x).strip().upper(), "Unmapped Role") if st.session_state["map_data"] is not None else "Map File Missing")
+        # FIX: Align formatting switches (dashes, spaces, and brackets removal) on raw candidate file names
+        def get_mapped_domain(jname):
+            if st.session_state["map_data"] is not None:
+                clean_key = str(jname).strip().upper()
+                clean_key = re.sub(r'[\xa0\s\u200b]+', ' ', clean_key)
+                clean_key = re.sub(r'[–—‒–\-_]+', '-', clean_key)
+                clean_key = re.sub(r'[\[\]\(\)]', '', clean_key).strip()
+                return st.session_state["map_data"].get(clean_key, "Unmapped Role")
+            return "Map File Missing"
+        df['Job_Domain'] = df['Job Name'].apply(get_mapped_domain)
 
         def parse_edu(txt):
             defaults = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
