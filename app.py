@@ -49,9 +49,10 @@ if ref_file is not None:
         ref_df.columns = [str(c).strip().title() for c in ref_df.columns]
         dom_col = 'Domains' if 'Domains' in ref_df.columns else ('Domain Tagging' if 'Domain Tagging' in ref_df.columns else None)
         if 'Job' in ref_df.columns and dom_col:
+            # FIX: Force strict uppercase conversion AND wipe out hidden leading/trailing white space strings
             ref_df['Job_Key'] = ref_df['Job'].astype(str).str.strip().str.upper()
-            st.session_state["map_data"] = dict(zip(ref_df['Job_Key'], ref_df[dom_col].astype(str).str.strip()))
-            st.sidebar.success("✅ Job Map Linked!")
+            st.session_state["map_data"] = dict(zip(ref_df['Job_Key'], ref_df[dom_col].astype(str).str.strip().str.title()))
+            st.sidebar.success("✅ Job Map Linked Successfully!")
         else: st.sidebar.error("Error: Missing 'Job' or 'Domains' headers.")
     except Exception as err: st.sidebar.error(f"Error: {err}")
 
@@ -100,6 +101,7 @@ if file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
+        # FIX: Force exact uppercase and clean whitespace extraction during candidates match checks
         df['Job_Domain'] = df['Job Name'].apply(lambda x: st.session_state["map_data"].get(str(x).strip().upper(), "Unmapped Role") if st.session_state["map_data"] is not None else "Map File Missing")
 
         def parse_edu(txt):
