@@ -52,10 +52,11 @@ if ref_file is not None:
         job_col = next((c for c in ref_df.columns if 'JOB' in c.upper()), None)
         
         if job_col and dom_col:
+            # Universal text cleaner for dictionary creation
             ref_df['Job_Clean'] = ref_df[job_col].astype(str).str.replace('\xa0', ' ').str.replace('\u200b', ' ')
             ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace('–', '-').str.replace('—', '-').str.replace('‒', '-')
             ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace('[', '').str.replace(']', '').str.replace('(', '').str.replace(')', '')
-            ref_df['Job_Clean'] = ref_df['Job_Clean'].str.strip().str.upper()
+            ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace(' ', '').str.strip().str.upper()
             
             st.session_state["map_data"] = dict(zip(ref_df['Job_Clean'], ref_df[dom_col].astype(str).str.strip().str.title()))
             st.sidebar.success("✅ Job Map Linked Successfully!")
@@ -107,14 +108,26 @@ if file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
-        # FIX: Removed the invalid .str attribute typo from the middle of the string replace sequence
+        # --- RE-ENGINEERED SUBSTRING CONTAINMENT LOOKUP MATCH PASS ---
         def get_mapped_domain(jname):
             if st.session_state["map_data"] is not None:
-                clean_key = str(jname).replace('\xa0', ' ').replace('\u200b', ' ')
-                clean_key = clean_key.replace('–', '-').replace('—', '-').replace('‒', '-')
-                clean_key = clean_key.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
-                clean_key = clean_key.strip().upper()
-                return st.session_state["map_data"].get(clean_key, "Unmapped Role")
+                # Standardize candidate titles cleanly by wiping spaces, hyphens, and slashes completely
+                c_key = str(jname).replace('\xa0', ' ').replace('\u200b', ' ')
+                c_key = c_key.replace('–', '-').replace('—', '-').replace('‒', '-')
+                c_key = c_key.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
+                c_key = c_key.replace(' ', '').replace('/', '').strip().upper()
+                
+                # Check exact matches first
+                if c_key in st.session_state["map_data"]:
+                    return st.session_state["map_data"][c_key]
+                
+                # Dynamic Substring Check: loop and match partial names to capture slashed variations smoothly
+                for dict_key, domain_val in st.session_state["map_data"].items():
+                    clean_dict_key = dict_key.replace('/', '')
+                    if c_key in clean_dict_key or clean_dict_key in c_key:
+                        return domain_val
+                        
+                return "Unmapped Role"
             return "Map File Missing"
         df['Job_Domain'] = df['Job Name'].apply(get_mapped_domain)
 
