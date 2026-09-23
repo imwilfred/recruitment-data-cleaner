@@ -46,16 +46,18 @@ ref_file = st.sidebar.file_uploader("1. Upload Job Mapping File", type=["csv", "
 if ref_file is not None:
     try:
         ref_df = pd.read_csv(ref_file) if ref_file.name.endswith('.csv') else pd.read_excel(ref_file)
-        ref_df.columns = [str(c).replace(r'\xa0', ' ').strip().title() for c in ref_df.columns]
+        # Deep space cleaning on reference headers to avoid column look-up bugs
+        ref_df.columns = [str(c).replace('\xa0', ' ').strip().title() for c in ref_df.columns]
         
         dom_col = next((c for c in ref_df.columns if 'DOMAIN' in c.upper()), None)
         job_col = next((c for c in ref_df.columns if 'JOB' in c.upper()), None)
         
         if job_col and dom_col:
-            # FIX: Wrapped in raw literal strings r'...' to prevent unicode escape errors completely
-            ref_df['Job_Clean'] = ref_df[job_col].astype(str).str.replace(r'[\xa0\s\u200b]+', ' ', regex=True)
-            ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace(r'[–—‒–\-_]+', '-', regex=True)
-            ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace(r'[\[\]\(\)]', '', regex=True).str.strip().str.upper()
+            # FIX: Swapped out regex patterns for direct char strips to bypass regex string parsing bugs
+            ref_df['Job_Clean'] = ref_df[job_col].astype(str).str.replace('\xa0', ' ').str.replace('\u200b', ' ')
+            ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace('–', '-').str.replace('—', '-').str.replace('‒', '-')
+            ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace('[', '').str.replace(']', '').str.replace('(', '').str.replace(')', '')
+            ref_df['Job_Clean'] = ref_df['Job_Clean'].str.strip().str.upper()
             
             st.session_state["map_data"] = dict(zip(ref_df['Job_Clean'], ref_df[dom_col].astype(str).str.strip().str.title()))
             st.sidebar.success("✅ Job Map Linked Successfully!")
@@ -107,13 +109,13 @@ if file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
-        # FIX: Wrapped in raw strings r'...' here as well to protect the mapping regex passes
+        # FIX: Swapped out regex loop matching for precise individual text replaces here as well
         def get_mapped_domain(jname):
             if st.session_state["map_data"] is not None:
-                clean_key = str(jname).strip().upper()
-                clean_key = re.sub(r'[\xa0\s\u200b]+', ' ', clean_key)
-                clean_key = re.sub(r'[–—‒–\-_]+', '-', clean_key)
-                clean_key = re.sub(r'[\[\]\(\)]', '', clean_key).strip()
+                clean_key = str(jname).replace('\xa0', ' ').replace('\u200b', ' ')
+                clean_key = clean_key.replace('–', '-').replace('—', '-').str.replace('‒', '-')
+                clean_key = clean_key.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
+                clean_key = clean_key.strip().upper()
                 return st.session_state["map_data"].get(clean_key, "Unmapped Role")
             return "Map File Missing"
         df['Job_Domain'] = df['Job Name'].apply(get_mapped_domain)
