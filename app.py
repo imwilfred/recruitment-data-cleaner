@@ -4,7 +4,7 @@ st.title("📊 Interactive Recruitment Funnel & Data Cleaner")
 
 # Initialize persistent background session memory trackers for hot reloads
 if "ukey" not in st.session_state: st.session_state["ukey"] = 0
-if "map_data" not in st.session_state: st.session_state["map_data"] = None
+if "map_df_stored" not in st.session_state: st.session_state["map_df_stored"] = None
 
 def draw_funnel(t, e, s, i, o, h):
     st.markdown("### 🗺️ Visual Pipeline Funnel (Strict Sequential Step-Down)")
@@ -52,21 +52,19 @@ if ref_file is not None:
         job_col = next((c for c in ref_df.columns if 'JOB' in c.upper()), None)
         
         if job_col and dom_col:
+            # Clear strings formatting values
             ref_df['Job_Clean'] = ref_df[job_col].astype(str).str.replace('\xa0', ' ').str.replace('\u200b', ' ')
             ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace('–', '-').str.replace('—', '-').str.replace('‒', '-')
             ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace('[', '').str.replace(']', '').str.replace('(', '').str.replace(')', '')
             ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace(' ', '').str.replace('/', '').str.strip().str.upper()
             
-            # --- FIX: SORT DICTIONARY BY KEY STRING LENGTH IN DESCENDING ORDER (GREEDY MATCH PRIORITY) ---
-            ref_df['Key_Len'] = ref_df['Job_Clean'].str.len()
-            ref_df = ref_df.sort_values(by='Key_Len', ascending=False)
-            
-            st.session_state["map_data"] = dict(zip(ref_df['Job_Clean'], ref_df[dom_col].astype(str).str.strip()))
-            st.sidebar.success("✅ Job Map Linked Successfully!")
+            # Persist the dataframe structure in memory directly to retain duplicates safely
+            st.session_state["map_df_stored"] = ref_df[['Job_Clean', dom_col]].rename(columns={dom_col: 'Extracted_Domain'}).drop_duplicates()
+            st.sidebar.success("✅ Job Master Reference DataFrame Linked!")
         else: st.sidebar.error("Error: Could not identify 'Job' or 'Domain' column headers.")
     except Exception as err: st.sidebar.error(f"Error: {err}")
 
-if st.session_state["map_data"] is None:
+if st.session_state["map_df_stored"] is None:
     st.sidebar.info("💡 Tip: Upload reference map above to unlock structural domain filters.")
 
 st.sidebar.markdown("---")
@@ -111,33 +109,28 @@ if file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
-        # --- GREEDY SUBSTRING CONTAINER LOOKUP ENGINE LOOP ---
-        def get_mapped_domain(jname):
-            if st.session_state["map_data"] is not None:
-                c_key = str(jname).replace('\xa0', ' ').replace('\u200b', ' ')
-                c_key = c_key.replace('–', '-').replace('—', '-').replace('‒', '-')
-                c_key = c_key.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
-                c_key = c_key.replace(' ', '').replace('/', '').strip().upper()
-                
-                raw_val = None
-                # Longest keys sort order protects hyper-specific strings from short keyword hijack overrides
-                if c_key in st.session_state["map_data"]:
-                    raw_val = st.session_state["map_data"][c_key]
-                else:
-                    for dict_key, domain_val in st.session_state["map_data"].items():
-                        clean_dict_key = dict_key.replace('/', '')
-                        if c_key in clean_dict_key or clean_dict_key in c_key:
-                            raw_val = domain_val
-                            break
-                            
-                if raw_val:
-                    if raw_val.upper() in ["PRM", "PCP", "ESP", "AESP", "IT"]: 
-                        return raw_val.upper()
-                    return raw_val.title()
-                    
-                return "Unmapped Role"
-            return "Map File Missing"
-        df['Job_Domain'] = df['Job Name'].apply(get_mapped_domain)
+        # --- NEW: ADVANCED PANDAS JOIN MERGE ENGINE ---
+        df['Job_Clean'] = df['Job Name'].astype(str).str.replace('\xa0', ' ').str.replace('\u200b', ' ')
+        df['Job_Clean'] = df['Job_Clean'].str.replace('–', '-').str.replace('—', '-').str.replace('‒', '-')
+        df['Job_Clean'] = df['Job_Clean'].str.replace('[', '').str.replace(']', '').str.replace('(', '').str.replace(')', '')
+        df['Job_Clean'] = df['Job_Clean'].str.replace(' ', '').str.replace('/', '').str.strip().str.upper()
+
+        if st.session_state["map_df_stored"] is not None:
+            # Execute a clean left-merge to cross-reference precise job keys flawlessly
+            merged_df = df.merge(st.session_state["map_df_stored"], on='Job_Clean', how='left')
+            df['Job_Domain'] = merged_df['Extracted_Domain'].fillna("Unmapped Role")
+        else:
+            df['Job_Domain'] = "Map File Missing"
+            
+        # Clean background formatting trackers
+        if 'Job_Clean' in df.columns: df = df.drop(columns=['Job_Clean'])
+        
+        # Standardize acronym formatting casing rules
+        def format_domain_caps(v):
+            val = str(v).strip()
+            if val.upper() in ["PRM", "PCP", "ESP", "AESP", "IT"]: return val.upper()
+            return val.title()
+        df['Job_Domain'] = df['Job_Domain'].apply(format_domain_caps)
 
         def parse_edu(txt):
             defaults = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
