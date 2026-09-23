@@ -2,6 +2,7 @@ import streamlit as st, pandas as pd, re, io
 st.set_page_config(page_title="Funnel", layout="wide")
 st.title("📊 Interactive Recruitment Funnel & Data Cleaner")
 
+# Initialize persistent background session memory trackers for hot reloads
 if "ukey" not in st.session_state: st.session_state["ukey"] = 0
 if "map_data" not in st.session_state: st.session_state["map_data"] = None
 
@@ -51,7 +52,7 @@ if ref_file is not None:
         job_col = next((c for c in ref_df.columns if 'JOB' in c.upper()), None)
         
         if job_col and dom_col:
-            # FIX: Normalize dashes, clear out brackets/parentheses, and strip extra whitespaces from reference values
+            # FIX: Wrapped in raw literal strings r'...' to prevent unicode escape errors completely
             ref_df['Job_Clean'] = ref_df[job_col].astype(str).str.replace(r'[\xa0\s\u200b]+', ' ', regex=True)
             ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace(r'[–—‒–\-_]+', '-', regex=True)
             ref_df['Job_Clean'] = ref_df['Job_Clean'].str.replace(r'[\[\]\(\)]', '', regex=True).str.strip().str.upper()
@@ -106,7 +107,7 @@ if file is not None:
         }
         df['Rank'] = df['Application Status'].apply(lambda x: st_map.get(str(x).strip().lower(), 12))
 
-        # FIX: Align formatting switches (dashes, spaces, and brackets removal) on raw candidate file names
+        # FIX: Wrapped in raw strings r'...' here as well to protect the mapping regex passes
         def get_mapped_domain(jname):
             if st.session_state["map_data"] is not None:
                 clean_key = str(jname).strip().upper()
