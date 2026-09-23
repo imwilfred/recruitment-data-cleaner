@@ -2,7 +2,7 @@ import streamlit as st, pandas as pd, re, io
 st.set_page_config(page_title="Funnel", layout="wide")
 st.title("📊 Interactive Recruitment Funnel & Data Cleaner")
 
-# Persistent memory parameters for spreadsheet tracking state management
+# Initialize persistent background session memory trackers for hot reloads
 if "ukey" not in st.session_state: st.session_state["ukey"] = 0
 if "map_df_stored" not in st.session_state: st.session_state["map_df_stored"] = None
 
@@ -39,7 +39,32 @@ def render_tab(title, data, job, domain):
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine='openpyxl') as w: g.to_excel(w, index=False, sheet_name='Data')
         st.download_button(f"📥 Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        st.sidebar.header("📁 Reference Uploads")
+
+def parse_edu(txt):
+    defaults = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
+    if pd.isna(txt) or not isinstance(txt, str) or txt.strip() == "": return defaults
+    parts = [p.strip() for p in txt.split('|') if p.strip()]
+    u = txt.upper()
+    phd, master, bach, dip, alev = "PHD" in u or "DOCTOR" in u, "MASTER" in u or "MSC" in u or "MBA" in u, "BACHELOR" in u or "DEGREE" in u or "BSC" in u or "BENG" in u, "DIPLOMA" in u or "POLYTECHNIC" in u, "A LEVEL" in u or "ADVANCED LEVEL" in u or "JUNIOR COLLEGE" in u
+    lvl = "PhD" + (" ➔ Master" if master else "") + (" ➔ Bachelor" if bach else "") if phd else ("Master" + (" ➔ Bachelor" if bach else "") if master else ("Bachelor" if bach else (" & ".join([w for w, c in [("Diploma", dip), ("A-Levels", alev)] if c]) if (dip or alev) else "Other / School")))
+    sch, disc = "Not Listed", "Not Listed"
+    skw = ["UNIVERSITY", "POLYTECHNIC", "INSTITUTE", "COLLEGE", "SCHOOL", "NUS", "NTU", "SMU", "SIT", "SUTD", "SUSS", "ACADEMY", "CENTRE", "CENTER", "FACULTY", "UNIVERSIDADE", "UNIVERSIDAD", "ECOLE", "UPF"]
+    ikw = ["BACHELOR", "MASTER", "PHD", "DIPLOMA", "DEGREE", "HONOURS", "HONORS", "DISTINCTION", "CERTIFICATE", "BSC", "BENG", "MSC", "MBA", "CERTIFICATION", "GRADUATE", "EQUIVALENT"]
+    for p in parts:
+        if any(k in p.upper() for k in skw): sch = p; break
+    longest_len = 0
+    for p in parts:
+        pu = p.upper()
+        if p == sch or re.search(r'\d{4}', p) or re.match(r'^\d+(\.\d+)?$', p): continue
+        if any(k in pu for k in ikw) or any(k in pu for k in skw) or len(p) <= 2: continue
+        if len(p) > longest_len: longest_len = len(p); disc = p
+    if disc != "Not Listed":
+        disc = re.sub(r'^(Bachelor of|Master of|BSc|BEng|Diploma in|BSc Hons|Degree in|Tecnologo Em|Tecnólogo Em)\s*', '', disc, flags=re.IGNORECASE)
+        disc = re.sub(r'[\-,]\s*(Honours|Honors|Distinction|Graduation).*$', '', disc, flags=re.IGNORECASE).strip()
+        for k in ["NTU", "NUS", "SMU", "SIT", "SUSS", "SUTD"]:
+            if disc.endswith(k): disc = disc[:-len(k)].strip()
+    return {"l": lvl, "d": disc.title() if disc != "Not Listed" else "Not Listed", "s": sch.title() if sch != "Not Listed" else "Not Listed"}
+    st.sidebar.header("📁 Reference Uploads")
 ref_file = st.sidebar.file_uploader("1. Upload Job Mapping File", type=["csv", "xlsx"])
 
 if ref_file is not None:
@@ -67,31 +92,7 @@ st.sidebar.markdown("---")
 st.sidebar.header("🔍 Funnel Controls")
 file = st.file_uploader("2. Upload Raw Candidate File", type=["csv", "xlsx"], key=f"up_{st.session_state['ukey']}")
 
-def parse_edu(txt):
-    defaults = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
-    if pd.isna(txt) or not isinstance(txt, str) or txt.strip() == "": return defaults
-    parts = [p.strip() for p in txt.split('|') if p.strip()]
-    u = txt.upper()
-    phd, master, bach, dip, alev = "PHD" in u or "DOCTOR" in u, "MASTER" in u or "MSC" in u or "MBA" in u, "BACHELOR" in u or "DEGREE" in u or "BSC" in u or "BENG" in u, "DIPLOMA" in u or "POLYTECHNIC" in u, "A LEVEL" in u or "ADVANCED LEVEL" in u or "JUNIOR COLLEGE" in u
-    lvl = "PhD" + (" ➔ Master" if master else "") + (" ➔ Bachelor" if bach else "") if phd else ("Master" + (" ➔ Bachelor" if bach else "") if master else ("Bachelor" if bach else (" & ".join([w for w, c in [("Diploma", dip), ("A-Levels", alev)] if c]) if (dip or alev) else "Other / School")))
-    sch, disc = "Not Listed", "Not Listed"
-    skw = ["UNIVERSITY", "POLYTECHNIC", "INSTITUTE", "COLLEGE", "SCHOOL", "NUS", "NTU", "SMU", "SIT", "SUTD", "SUSS", "ACADEMY", "CENTRE", "CENTER", "FACULTY", "UNIVERSIDADE", "UNIVERSIDAD", "ECOLE", "UPF"]
-    ikw = ["BACHELOR", "MASTER", "PHD", "DIPLOMA", "DEGREE", "HONOURS", "HONORS", "DISTINCTION", "CERTIFICATE", "BSC", "BENG", "MSC", "MBA", "CERTIFICATION", "GRADUATE", "EQUIVALENT"]
-    for p in parts:
-        if any(k in p.upper() for k in skw): sch = p; break
-    longest_len = 0
-    for p in parts:
-        pu = p.upper()
-        if p == sch or re.search(r'\d{4}', p) or re.match(r'^\d+(\.\d+)?$', p): continue
-        if any(k in pu for k in ikw) or any(k in pu for k in skw) or len(p) <= 2: continue
-        if len(p) > longest_len: longest_len = len(p); disc = p
-    if disc != "Not Listed":
-        disc = re.sub(r'^(Bachelor of|Master of|BSc|BEng|Diploma in|BSc Hons|Degree in|Tecnologo Em|Tecnólogo Em)\s*', '', disc, flags=re.IGNORECASE)
-        disc = re.sub(r'[\-,]\s*(Honours|Honors|Distinction|Graduation).*$', '', disc, flags=re.IGNORECASE).strip()
-        for k in ["NTU", "NUS", "SMU", "SIT", "SUSS", "SUTD"]:
-            if disc.endswith(k): disc = disc[:-len(k)].strip()
-    return {"l": lvl, "d": disc.title() if disc != "Not Listed" else "Not Listed", "s": sch.title() if sch != "Not Listed" else "Not Listed"}
-    if file is not None:
+if file is not None:
     if st.button("🗑️ Clear Candidate File & Restart", type="primary"):
         st.session_state["ukey"] += 1
         st.rerun()
@@ -137,14 +138,12 @@ def parse_edu(txt):
                 c_key = c_key.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
                 c_key = c_key.replace(' ', '').replace('/', '').strip().upper()
                 
-                # Check for an absolute character-for-character EXACT match first
                 for _, row in st.session_state["map_df_stored"].iterrows():
                     ref_key = str(row['Job_Clean']).replace('/', '')
                     if c_key == ref_key:
                         val = str(row['Extracted_Domain']).strip()
                         return val.upper() if val.upper() in ["PRM", "PCP", "ESP", "AESP", "IT"] else val.title()
                 
-                # Only check for partial substring containment if exact match fails
                 for _, row in st.session_state["map_df_stored"].iterrows():
                     ref_key = str(row['Job_Clean']).replace('/', '')
                     if c_key in ref_key or ref_key in c_key:
