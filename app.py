@@ -79,9 +79,12 @@ if r_file is not None:
         dm_c = next((c for c in r_df.columns if 'DOMAIN' in c.upper()), None)
         job_header = next((c for c in r_df.columns if 'JOB' in c.upper()), None)
         if job_header and dm_c:
-            r_df['J_Cln'] = r_df[job_header].apply(clean_txt_key)
-            st.session_state["m_df"] = dict(zip(r_df['J_Cln'], r_df[dm_c].astype(str).str.strip()))
+            # FIX: Extracted raw mapping as static dictionaries immediately to prevent data format crashes
+            clean_keys = [clean_txt_key(str(v)) for v in r_df[job_header].tolist()]
+            domain_vals = [str(v).strip() for v in r_df[dm_c].tolist()]
+            st.session_state["m_df"] = dict(zip(clean_keys, domain_vals))
             st.sidebar.success("✅ Job Master Reference Linked!")
+        else: st.sidebar.error("Error: Could not identify mapping headers.")
     except Exception as err: st.sidebar.error(f"Error reading map: {err}")
 
 if st.session_state["m_df"] is None:
