@@ -22,8 +22,23 @@ def is_eligible(cz):
     return "CITIZEN" in u and not any(w in u for w in ("NON", "FOREIGN"))
 
 
+def tidy_domain(v):
+    """Clean stray spaces / zero-width characters; standardise the four main domains, keep anything else as written."""
+    v = re.sub(r'[\u200b\xa0\s]+', ' ', str(v)).strip()
+    return DOMAINS.get(v.lower(), v)
+
+
 def get_dom(jn):
-    return (st.session_state["m_df"] or {}).get(job_key(jn), "Unmapped")
+    """Returns (domain, mapping title used). Title is None for an exact match, so partial matches can be reviewed."""
+    m, t = st.session_state["m_df"], st.session_state.get("m_titles", {})
+    if not m: return "Unmapped", None
+    ck = job_key(jn)
+    if ck in m: return m[ck], None                                 # 1. exact match after cleaning
+    inside = [k for k in m if len(k) >= 12 and k in ck]            # 2. mapping title contained in raw title (e.g. ", CIO Office" added)
+    if inside:
+        k = max(inside, key=len)
+        return m[k], t.get(k)
+    return "Unmapped", None
 
 
 def dedupe(d):
@@ -113,21 +128,26 @@ r_file = st.sidebar.file_uploader("1. Upload Job Mapping File", type=["csv", "xl
 
 if r_file is not None:
     try:
-        r_df = pd.read_csv(r_file) if r_file.name.endswith('.csv') else pd.read_excel(r_file)
-        r_df.columns = [str(c).replace('\xa0', ' ').strip() for c in r_df.columns]
-        jcol = next((c for c in r_df.columns if 'JOB' in c.upper() and 'DOMAIN' not in c.upper()), None)
-        dcol = next((c for c in r_df.columns if 'DOMAIN' in c.upper()), None)
-        if jcol and dcol:
-            m = r_df[[jcol, dcol]].dropna()
-            m = m.assign(k=m[jcol].map(job_key), d=m[dcol].astype(str).str.strip().str.lower().map(DOMAINS))
-            bad = m[m.d.isna()]
-            m = m[(m.k != "") & m.d.notna()]
-            if (m.groupby('k')['d'].nunique() > 1).any(): st.sidebar.warning("⚠️ Same job mapped to different domains")
-            if len(bad): st.sidebar.warning(f"⚠️ {len(bad)} mapping rows have an unrecognised domain")
-            st.session_state["m_df"] = dict(zip(m.k, m.d))
-            st.sidebar.success("✅ Job mapping loaded")
+        sheets = {"csv": pd.read_csv(r_file)} if r_file.name.endswith('.csv') else pd.read_excel(r_file, sheet_name=None)
+        year = lambda n: int((re.findall(r'(?:19|20)\d{2}', n) or ['0'])[0])
+        mp, titles, used = {}, {}, 0
+        for sn in sorted(sheets, key=year):            # oldest first, so the newest sheet wins any conflict
+            sd = sheets[sn]
+            sd.columns = [str(c).replace('\xa0', ' ').strip() for c in sd.columns]
+            jcol = next((c for c in sd.columns if 'JOB' in c.upper() and 'DOMAIN' not in c.upper()), None)
+            dcol = next((c for c in sd.columns if 'DOMAIN' in c.upper()), None)
+            if not (jcol and dcol): continue
+            used += 1
+            for jb, dm in sd[[jcol, dcol]].dropna().itertuples(index=False):
+                k, d = job_key(jb), tidy_domain(dm)
+                if k and d: mp[k], titles[k] = d, str(jb).strip()
+        if used:
+            st.session_state["m_df"], st.session_state["m_titles"] = mp, titles
+            st.sidebar.success(f"✅ Job mapping loaded ({used} sheet(s); newest sheet overrides older)")
+            odd = sorted(set(mp.values()) - set(DOMAINS.values()))
+            if odd: st.sidebar.info(f"Other domain values in mapping file: {', '.join(odd)}")
         else:
-            st.sidebar.error("Mapping file needs a 'Job' column and a 'Domain' column")
+            st.sidebar.error("No sheet has both a 'Job' column and a 'Domain' column")
     except Exception as err: st.sidebar.error(f"Error reading map: {err}")
 
 if st.session_state["m_df"] is None:
@@ -173,11 +193,16 @@ if file is not None:
         df['Rank'] = [sm.get(str(x).strip().lower(), 12) for x in df['Application Status'].tolist()] if 'Application Status' in df.columns else 12
 
         df['Eligibility_Status'] = ["Eligible" if is_eligible(cz) else "Ineligible" for cz in df['Citizenship'].tolist()]
-        df['Job Domain'] = [get_dom(j) for j in df['Job Name'].tolist()]
+        res = {j: get_dom(j) for j in df['Job Name'].unique()}
+        df['Job Domain'] = [res[j][0] for j in df['Job Name'].tolist()]
 
-        um = sorted(df.loc[df['Job Domain'] == "Unmapped", 'Job Name'].unique())
-        if um and st.session_state["m_df"] is not None:
-            with st.sidebar.expander(f"⚠️ {len(um)} unmapped job names"): st.write(um)
+        if st.session_state["m_df"] is not None:
+            um = sorted(j for j, r in res.items() if r[0] == "Unmapped")
+            pm = sorted(f"{j}  →  {r[1]}" for j, r in res.items() if r[1])
+            if um:
+                with st.sidebar.expander(f"⚠️ {len(um)} unmapped job names"): st.write(um)
+            if pm:
+                with st.sidebar.expander(f"🔎 {len(pm)} matched by partial title - please review"): st.write(pm)
 
         if 'Candidate Education' in df.columns:
             ed = [edu(x) for x in df['Candidate Education'].tolist()]
