@@ -123,8 +123,15 @@ def clean_str_col(df, col, fn):
 
 
 # ---------- job mapping upload ----------
-st.sidebar.header("📁 Reference Uploads")
-r_file = st.sidebar.file_uploader("1. Upload Job Mapping File", type=["csv", "xlsx"])
+st.info(
+    "**How to use this tool**  \n"
+    "**Step 1** - Upload the **Job Mapping file** (left box). All its sheets are read; the newest year wins.  \n"
+    "**Step 2** - Upload the **Raw Candidate file** (right box). Only its first sheet is read.  \n"
+    "**Step 3** - Use the filters in the left sidebar, switch between **View A (Total)** and **View B (Unique)**, and export any table to Excel.  \n"
+    "Accepted formats: .xlsx, .xls, .csv"
+)
+c1, c2 = st.columns(2)
+r_file = c1.file_uploader("Step 1: Upload the Job Mapping file", type=["csv", "xlsx", "xls"])
 
 if r_file is not None:
     try:
@@ -143,19 +150,19 @@ if r_file is not None:
                 if k and d: mp[k], titles[k] = d, str(jb).strip()
         if used:
             st.session_state["m_df"], st.session_state["m_titles"] = mp, titles
-            st.sidebar.success(f"✅ Job mapping loaded ({used} sheet(s); newest sheet overrides older)")
+            c1.success(f"✅ Job mapping loaded ({used} sheet(s); newest sheet overrides older)")
             odd = sorted(set(mp.values()) - set(DOMAINS.values()))
-            if odd: st.sidebar.info(f"Other domain values in mapping file: {', '.join(odd)}")
+            if odd: c1.info(f"Other domain values in mapping file: {', '.join(odd)}")
         else:
-            st.sidebar.error("No sheet has both a 'Job' column and a 'Domain' column")
-    except Exception as err: st.sidebar.error(f"Error reading map: {err}")
+            c1.error("No sheet has both a 'Job' column and a 'Domain' column")
+    except Exception as err: c1.error(f"Error reading map: {err}")
 
 if st.session_state["m_df"] is None:
-    st.sidebar.info("💡 Upload the job mapping above to unlock domain filters.")
+    c1.info("💡 Upload the Job Mapping file to fill in the Job Domain column.")
 
-st.sidebar.markdown("---")
-st.sidebar.header("🎛️ Funnel Controls")
-file = st.file_uploader("2. Upload Raw Candidate File", type=["csv", "xlsx"], key=f"up_{st.session_state['ukey']}")
+st.sidebar.header("🎛️ Filters")
+st.sidebar.caption("Filters apply to both views once the Raw Candidate file is loaded.")
+file = c2.file_uploader("Step 2: Upload the Raw Candidate file", type=["csv", "xlsx", "xls"], key=f"up_{st.session_state['ukey']}")
 
 # ---------- main ----------
 if file is not None:
