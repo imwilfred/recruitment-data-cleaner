@@ -75,11 +75,19 @@ r_file = st.sidebar.file_uploader("1. Upload Job Mapping File", type=["csv", "xl
 if r_file is not None:
     try:
         r_df = pd.read_csv(r_file) if r_file.name.endswith('.csv') else pd.read_excel(r_file)
-        r_df.columns = [str(c).replace('\xa0', ' ').strip().title() for c in r_df.columns]
+        
+        # Deduplicate reference file columns if duplicates exist
+        rcnt = {}
+        new_cols = []
+        for c in r_df.columns:
+            cn = str(c).replace('\xa0', ' ').strip().title()
+            rcnt[cn] = rcnt.get(cn, 0) + 1
+            new_cols.append(f"{cn}_{rcnt[cn]}" if rcnt[cn] > 1 else cn)
+        r_df.columns = new_cols
+        
         dm_c = next((c for c in r_df.columns if 'DOMAIN' in c.upper()), None)
         job_header = next((c for c in r_df.columns if 'JOB' in c.upper()), None)
         if job_header and dm_c:
-            # FIX: Extracted raw mapping as static dictionaries immediately to prevent data format crashes
             clean_keys = [clean_txt_key(str(v)) for v in r_df[job_header].tolist()]
             domain_vals = [str(v).strip() for v in r_df[dm_c].tolist()]
             st.session_state["m_df"] = dict(zip(clean_keys, domain_vals))
@@ -99,26 +107,40 @@ if file is not None:
         st.rerun()
     try:
         df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
-        df.columns = [str(c).strip() for c in df.columns]
+        
+        # FIX: Hard-deduplicate duplicate column name instances instantly to clear Series/DataFrame notation conflicts
+        ccnt = {}
+        clist = []
+        for c in df.columns:
+            c_clean = str(c).strip()
+            ccnt[c_clean] = ccnt.get(c_clean, 0) + 1
+            clist.append(f"{c_clean}.{ccnt[c_clean]-1}" if ccnt[c_clean] > 1 else c_clean)
+        df.columns = clist
+        
         t_jb = next((c for c in df.columns if 'JOB' in c.upper() and 'DOMAIN' not in c.upper()), 'Job Name')
         if t_jb != 'Job Name': df = df.rename(columns={t_jb: 'Job Name'})
         
         cc = ['Candidate Name', 'Email Address', 'NRIC Number', 'Application Status', 'Job Name', 'Citizenship', 'Country Of Birth']
         for c in cc:
-            if c in df.columns: df[c] = df[c].fillna("").astype(str).str.strip()
-        if 'Candidate Name' in df.columns: df['Candidate Name'] = df['Candidate Name'].str.title()
-        if 'Email Address' in df.columns: df['Email Address'] = df['Email Address'].str.lower()
-        if 'NRIC Number' in df.columns: df['NRIC Number'] = df['NRIC Number'].str.upper()
-        if 'Citizenship' in df.columns: df['Citizenship'] = df['Citizenship'].str.title()
-        if 'Country Of Birth' in df.columns: df['Country Of Birth'] = df['Country Of Birth'].str.title()
-        df['Job Name'] = df['Job Name'].replace("", "Unknown Role")
+            if c in df.columns:
+                df[c] = df[c].fillna("").astype(str).str.strip()
+                if c == 'Candidate Name': df[c] = df[c].str.title()
+                if c == 'Email Address': df[c] = df[c].str.lower()
+                if c == 'NRIC Number': df[c] = df[c].str.upper()
+                if c == 'Citizenship' or c == 'Country Of Birth': df[c] = df[c].str.title()
+                
+        if 'Job Name' in df.columns: df['Job Name'] = df['Job Name'].replace("", "Unknown Role")
         
         sm = {
             "hired": 1, "hire in progress": 2, "offer in progress": 3, "verbal offer in progress": 4,
             "salary proposal in progress": 5, "interview in progress": 6, "interview reject": 7,
             "post screening slot in progress": 8, "post screening slot reject": 9, "screening in progress": 10, "screening reject": 11
         }
-        df['Rank'] = df['Application Status'].apply(lambda x: sm.get(str(x).strip().lower(), 12))
+        
+        if 'Application Status' in df.columns:
+            df['Rank'] = df['Application Status'].apply(lambda x: sm.get(str(x).strip().lower(), 12))
+        else:
+            df['Rank'] = 12
 
         def get_dom(jn):
             ck = clean_txt_key(jn)
@@ -157,9 +179,6 @@ if file is not None:
         job_list = ["All Jobs"] + sorted(list(filtered_job_source['Job Name'].unique())) if 'Job Name' in filtered_job_source.columns else ["All Jobs"]
         selected_job = st.sidebar.selectbox("Filter by Job Requisition", job_list)
         
-        max_exp = float(master_df['Total Exp'].max()) if 'Total Exp' in master_df.columns and len(master_df) > 0 else 10.0
-        min_exp_input = st.sidebar.slider("Minimum Years of Experience", 0.0, max_exp if not pd.isna(max_exp) else 10.0, 0.0, step=0.5)
-
         apps_df = master_df.copy().fillna("Not Provided")
         u_build = master_df.copy().sort_values(by=['Rank'], ascending=[True])
         u_build['NRIC Number'] = u_build['NRIC Number'].replace("", pd.NA)
