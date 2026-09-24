@@ -1,12 +1,45 @@
 import streamlit as st, pandas as pd, re, io
+
 st.set_page_config(page_title="Funnel", layout="wide")
-st.title("?? Interactive Recruitment Funnel & Data Cleaner")
+st.title("📊 Interactive Recruitment Funnel & Data Cleaner")
 
 if "ukey" not in st.session_state: st.session_state["ukey"] = 0
 if "m_df" not in st.session_state: st.session_state["m_df"] = None
 
+DOMAINS = {"digital": "Digital", "engineering": "Engineering", "prm": "PRM", "corporate": "Corporate"}
+
+
+# ---------- helpers ----------
+def job_key(s):
+    """Letters/digits only, upper-case: ignores spaces, '/', brackets, commas, dashes, nbsp."""
+    return re.sub(r'[\W_]+', '', str(s)).upper()
+
+
+def is_eligible(cz):
+    """EDIT HERE if your Citizenship values differ."""
+    u = str(cz).strip().upper()
+    if u in ("SINGAPORE", "SINGAPOREAN", "SG"): return True
+    return "CITIZEN" in u and not any(w in u for w in ("NON", "FOREIGN"))
+
+
+def get_dom(jn):
+    return (st.session_state["m_df"] or {}).get(job_key(jn), "Unmapped")
+
+
+def dedupe(d):
+    """Keep one row per applicant: furthest-progressed application (lowest Rank).
+    Pass 1 = NRIC, Pass 2 = Email. Rows with a blank identifier are never merged on it."""
+    d = d.sort_values('Rank', kind='stable')
+    for col in ['NRIC Number', 'Email Address']:
+        if col in d.columns:
+            blank = d[col].isna() | (d[col].astype(str).str.strip() == "")
+            d = pd.concat([d[~blank].drop_duplicates(subset=[col], keep='first'), d[blank]])
+            d = d.sort_values('Rank', kind='stable')
+    return d
+
+
 def fnl(t, e, s, i, o, h):
-    st.markdown("### ??? Visual Pipeline Funnel (Strict Sequential Step-Down)")
+    st.markdown("### 🔻 Visual Pipeline Funnel (Strict Sequential Step-Down)")
     p = lambda v: (v / t * 100) if t > 0 else 0
     stg = [
         {"n": "1. Total Inflow / Intake Pool", "v": t, "w": "100%", "c": "#1E88E5"},
@@ -17,9 +50,10 @@ def fnl(t, e, s, i, o, h):
         {"n": "6. Hired / Cleared Pool", "v": h, "w": "25%", "c": "#BBDEFB"}
     ]
     st.markdown("<div style='display:flex; flex-direction:column; align-items:center; width:100%;'>", unsafe_allow_html=True)
-    for s in stg:
-        st.markdown(f"<div style='background-color:{s['c']}; width:{s['w']}; max-width:600px; margin:4px auto; padding:12px; border-radius:8px; text-align:center; color:#0D47A1; box-shadow:0 2px 4px rgba(0,0,0,0.1);'><strong style='font-size:15px;'>{s['n']}</strong><br/><span style='font-size:20px; font-weight:bold;'>{s['v']}</span> <span style='font-size:12px;'>({p(s['v']):.1f}%)</span></div>", unsafe_allow_html=True)
+    for x in stg:
+        st.markdown(f"<div style='background-color:{x['c']}; width:{x['w']}; max-width:600px; margin:4px auto; padding:12px; border-radius:8px; text-align:center; color:#0D47A1; box-shadow:0 2px 4px rgba(0,0,0,0.1);'><strong style='font-size:15px;'>{x['n']}</strong><br/><span style='font-size:20px; font-weight:bold;'>{x['v']}</span> <span style='font-size:12px;'>({p(x['v']):.1f}%)</span></div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 def edu(x):
     d = {"l": "Not Provided", "d": "Not Listed", "s": "Not Listed"}
@@ -27,7 +61,7 @@ def edu(x):
     pt = [p.strip() for p in x.split('|') if p.strip()]
     u = x.upper()
     phd, mstr, bach, dip, alev = "PHD" in u or "DOCTOR" in u, "MASTER" in u or "MSC" in u or "MBA" in u, "BACHELOR" in u or "DEGREE" in u or "BSC" in u or "BENG" in u, "DIPLOMA" in u or "POLYTECHNIC" in u, "A LEVEL" in u or "ADVANCED LEVEL" in u or "JUNIOR COLLEGE" in u
-    lvl = "PhD" + (" ? Master" if mstr else "") + (" ? Bachelor" if bach else "") if phd else ("Master" + (" ? Bachelor" if bach else "") if mstr else ("Bachelor" if bach else (" & ".join([w for w, c in [("Diploma", dip), ("A-Levels", alev)] if c]) if (dip or alev) else "Other / School")))
+    lvl = "PhD" + (" > Master" if mstr else "") + (" > Bachelor" if bach else "") if phd else ("Master" + (" > Bachelor" if bach else "") if mstr else ("Bachelor" if bach else (" & ".join([w for w, c in [("Diploma", dip), ("A-Levels", alev)] if c]) if (dip or alev) else "Other / School")))
     s, ds = "Not Listed", "Not Listed"
     sk = ["UNIVERSITY", "POLYTECHNIC", "INSTITUTE", "COLLEGE", "SCHOOL", "NUS", "NTU", "SMU", "SIT", "SUTD", "SUSS", "ACADEMY", "CENTRE", "CENTER", "FACULTY", "UNIVERSIDADE", "UNIVERSIDAD", "ECOLE", "UPF"]
     ik = ["BACHELOR", "MASTER", "PHD", "DIPLOMA", "DEGREE", "HONOURS", "HONORS", "DISTINCTION", "CERTIFICATE", "BSC", "BENG", "MSC", "MBA", "CERTIFICATION", "GRADUATE", "EQUIVALENT"]
@@ -46,155 +80,138 @@ def edu(x):
             if ds.endswith(k): ds = ds[:-len(k)].strip()
     return {"l": lvl, "d": ds.title() if ds != "Not Listed" else "Not Listed", "s": s.title() if s != "Not Listed" else "Not Listed"}
 
-def tab(title, data, job, dom):
+
+def tab(title, data, job, dom, key):
     t = len(data)
     el = data[data['Eligibility_Status'] == "Eligible"]
     e = len(el)
-    s = len(el[el['Rank'] <= 9]) if 'Rank' in el.columns else 0
-    i = len(el[el['Rank'] <= 7]) if 'Rank' in el.columns else 0
-    o = len(el[el['Rank'] <= 5]) if 'Rank' in el.columns else 0
-    h = len(el[el['Rank'] == 1]) if 'Rank' in el.columns else 0
+    has_rank = 'Rank' in el.columns
+    s = len(el[el['Rank'] <= 9]) if has_rank else 0
+    i = len(el[el['Rank'] <= 7]) if has_rank else 0
+    o = len(el[el['Rank'] <= 5]) if has_rank else 0
+    h = len(el[el['Rank'] == 1]) if has_rank else 0
     st.subheader(f"{title}: {f'All Positions ({dom})' if job == 'All Jobs' else f'{job} ({dom})'}")
-    fv, dv = st.tabs(["??? View Graphical Funnel Map", "?? View Detailed Data Table"])
+    fv, dv = st.tabs(["🔻 View Graphical Funnel Map", "📋 View Detailed Data Table"])
     with fv: fnl(t, e, s, i, o, h)
     with dv:
         g = data.drop(columns=['Rank']) if 'Rank' in data.columns else data
         st.dataframe(g)
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine='openpyxl') as w: g.to_excel(w, index=False, sheet_name='Data')
-        st.download_button(f"?? Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button(f"📥 Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=key)
 
-def clean_txt_key(val_str):
-    k = str(val_str).replace('\xa0', ' ').replace('\u200b', ' ')
-    k = k.replace('–', '-').replace('—', '-').replace('-', '-')
-    k = k.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
-    return k.replace(' ', '').replace('/', '').strip().upper()
-st.sidebar.header("?? Reference Uploads")
+
+def clean_str_col(df, col, fn):
+    if col in df.columns:
+        df[col] = [fn(str(v).strip()) if pd.notna(v) else "" for v in df[col].tolist()]
+
+
+# ---------- job mapping upload ----------
+st.sidebar.header("📁 Reference Uploads")
 r_file = st.sidebar.file_uploader("1. Upload Job Mapping File", type=["csv", "xlsx"])
 
 if r_file is not None:
     try:
         r_df = pd.read_csv(r_file) if r_file.name.endswith('.csv') else pd.read_excel(r_file)
-        rcnt = {}
-        new_cols = []
-        for c in r_df.columns:
-            cn = str(c).replace('\xa0', ' ').strip().title()
-            rcnt[cn] = rcnt.get(cn, 0) + 1
-            new_cols.append(f"{cn}_{rcnt[cn]}" if rcnt[cn] > 1 else cn)
-        r_df.columns = new_cols
-        dm_c = next((c for c in r_df.columns if 'DOMAIN' in c.upper()), None)
-        job_header = next((c for c in r_df.columns if 'JOB' in c.upper()), None)
-        if job_header and dm_c:
-            clean_keys = [clean_txt_key(str(v)) for v in r_df[job_header].tolist()]
-            domain_vals = [str(v).strip() for v in r_df[dm_c].tolist()]
-            st.session_state["m_df"] = dict(zip(clean_keys, domain_vals))
-            st.sidebar.success("? Job Master Reference Linked!")
+        r_df.columns = [str(c).replace('\xa0', ' ').strip() for c in r_df.columns]
+        jcol = next((c for c in r_df.columns if 'JOB' in c.upper() and 'DOMAIN' not in c.upper()), None)
+        dcol = next((c for c in r_df.columns if 'DOMAIN' in c.upper()), None)
+        if jcol and dcol:
+            m = r_df[[jcol, dcol]].dropna()
+            m = m.assign(k=m[jcol].map(job_key), d=m[dcol].astype(str).str.strip().str.lower().map(DOMAINS))
+            bad = m[m.d.isna()]
+            m = m[(m.k != "") & m.d.notna()]
+            if (m.groupby('k')['d'].nunique() > 1).any(): st.sidebar.warning("⚠️ Same job mapped to different domains")
+            if len(bad): st.sidebar.warning(f"⚠️ {len(bad)} mapping rows have an unrecognised domain")
+            st.session_state["m_df"] = dict(zip(m.k, m.d))
+            st.sidebar.success("✅ Job mapping loaded")
+        else:
+            st.sidebar.error("Mapping file needs a 'Job' column and a 'Domain' column")
     except Exception as err: st.sidebar.error(f"Error reading map: {err}")
 
 if st.session_state["m_df"] is None:
-    st.sidebar.info("?? Tip: Upload reference map above to unlock structural domain filters.")
+    st.sidebar.info("💡 Upload the job mapping above to unlock domain filters.")
 
 st.sidebar.markdown("---")
-st.sidebar.header("?? Funnel Controls")
+st.sidebar.header("🎛️ Funnel Controls")
 file = st.file_uploader("2. Upload Raw Candidate File", type=["csv", "xlsx"], key=f"up_{st.session_state['ukey']}")
 
+# ---------- main ----------
 if file is not None:
-    if st.button("??? Clear Candidate File & Restart", type="primary"):
+    if st.button("🗑️ Clear Candidate File & Restart", type="primary"):
         st.session_state["ukey"] += 1
         st.rerun()
     try:
         df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
-        ccnt = {}
-        clist = []
+        ccnt, clist = {}, []
         for c in df.columns:
             c_clean = str(c).strip()
             ccnt[c_clean] = ccnt.get(c_clean, 0) + 1
             clist.append(f"{c_clean}.{ccnt[c_clean]-1}" if ccnt[c_clean] > 1 else c_clean)
         df.columns = clist
-        t_jb = next((c for c in df.columns if 'JOB' in c.upper() and 'DOMAIN' not in c.upper()), 'Job Name')
-        if t_jb != 'Job Name': df = df.rename(columns={t_jb: 'Job Name'})
-        
-        if 'Candidate Name' in df.columns:
-            df['Candidate Name'] = [str(v).strip().title() if pd.notna(v) else "" for v in df['Candidate Name'].tolist()]
-        if 'Email Address' in df.columns:
-            df['Email Address'] = [str(v).strip().lower() if pd.notna(v) else "" for v in df['Email Address'].tolist()]
-        if 'NRIC Number' in df.columns:
-            df['NRIC Number'] = [str(v).strip().upper() if pd.notna(v) else "" for v in df['NRIC Number'].tolist()]
-        if 'Citizenship' in df.columns:
-            df['Citizenship'] = [str(v).strip().title() if pd.notna(v) else "" for v in df['Citizenship'].tolist()]
-        if 'Country Of Birth' in df.columns:
-            df['Country Of Birth'] = [str(v).strip().title() if pd.notna(v) else "" for v in df['Country Of Birth'].tolist()]
-        if 'Application Status' in df.columns:
-            df['Application Status'] = [str(v).strip() if pd.notna(v) else "" for v in df['Application Status'].tolist()]
-        if 'Job Name' in df.columns:
-            df['Job Name'] = [str(v).strip() if pd.notna(v) else "Unknown Role" for v in df['Job Name'].tolist()]
+
+        if 'Job Name' not in df.columns:
+            t_jb = next((c for c in df.columns if 'JOB' in c.upper() and 'DOMAIN' not in c.upper()), None)
+            if t_jb: df = df.rename(columns={t_jb: 'Job Name'})
+        if 'Job Name' not in df.columns: df['Job Name'] = "Unknown Role"
+        if 'Citizenship' not in df.columns: df['Citizenship'] = ""
+
+        clean_str_col(df, 'Candidate Name', str.title)
+        clean_str_col(df, 'Email Address', str.lower)
+        clean_str_col(df, 'NRIC Number', str.upper)
+        clean_str_col(df, 'Citizenship', str.title)
+        clean_str_col(df, 'Country Of Birth', str.title)
+        clean_str_col(df, 'Application Status', str)
+        df['Job Name'] = [str(v).strip() if pd.notna(v) else "Unknown Role" for v in df['Job Name'].tolist()]
 
         sm = {
             "hired": 1, "hire in progress": 2, "offer in progress": 3, "verbal offer in progress": 4,
             "salary proposal in progress": 5, "interview in progress": 6, "interview reject": 7,
             "post screening slot in progress": 8, "post screening slot reject": 9, "screening in progress": 10, "screening reject": 11
         }
-        df['Rank'] = [sm.get(str(x).lower(), 12) for x in df['Application Status'].tolist()] if 'Application Status' in df.columns else 12
+        df['Rank'] = [sm.get(str(x).strip().lower(), 12) for x in df['Application Status'].tolist()] if 'Application Status' in df.columns else 12
 
-        def get_dom(jn):
-            ck = clean_txt_key(jn)
-            if st.session_state["m_df"] is not None:
-                if ck in st.session_state["m_df"]:
-                    v = str(st.session_state["m_df"][ck]).strip()
-                    return v.upper() if v.upper() in ["PRM", "PCP", "ESP", "AESP", "IT"] else v.title()
-                for ref_k, domain_v in st.session_state["m_df"].items():
-                    rk = str(ref_k).replace('/', '')
-                    if rk in ck or ck in rk:
-                        v = str(domain_v).strip()
-                        return v.upper() if v.upper() in ["PRM", "PCP", "ESP", "AESP", "IT"] else v.title()
-            ju = str(jn).upper()
-            if any(k in ju for k in ["SOFTWARE", "DEVELOPER", "CYBER", "CLOUD", "DATA", "AI", "ROBOTICS", "NETWORK", "SERVER", "UX", "DEVSECOPS"]): return "Digital"
-            if any(k in ju for k in ["ARCHITECT", "BUILDING", "INFRASTRUCTURE", "TECHNICAL", "SURVEYOR", "AEROSPACE", "NAVAL", "MARINE", "ARMAMENT", "RADAR", "SENSOR", "VEHICLE"]): return "Engineering"
-            if any(k in ju for k in ["HUMAN RESOURCE", "CORPORATE PLANNING", "FINANCIAL", "AUDIT", "OUTREACH", "COMMUNICATIONS", "BENEFITS", "SCHOLARSHIP"]): return "Corporate"
-            return "Engineering" if ("ENGINEER" in ju or "ANALYST" in ju) else "Corporate"
-            
-        df['Eligibility_Status'] = ["Eligible" if "CITIZEN" in str(cz).upper() or str(cz).upper() == 'SINGAPORE' else "Ineligible" for cz in df['Citizenship'].tolist()]
-        df['Job_Domain'] = [get_dom(j) for j in df['Job Name'].tolist()]
+        df['Eligibility_Status'] = ["Eligible" if is_eligible(cz) else "Ineligible" for cz in df['Citizenship'].tolist()]
+        df['Job Domain'] = [get_dom(j) for j in df['Job Name'].tolist()]
+
+        um = sorted(df.loc[df['Job Domain'] == "Unmapped", 'Job Name'].unique())
+        if um and st.session_state["m_df"] is not None:
+            with st.sidebar.expander(f"⚠️ {len(um)} unmapped job names"): st.write(um)
 
         if 'Candidate Education' in df.columns:
-            df['Highest_Education'] = [edu(x)['l'] for x in df['Candidate Education'].tolist()]
-            df['Primary_Discipline'] = [edu(x)['d'] for x in df['Candidate Education'].tolist()]
-            df['Institution'] = [edu(x)['s'] for x in df['Candidate Education'].tolist()]
-        else: df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = "Not Provided", "Not Listed", "Not Listed"
+            ed = [edu(x) for x in df['Candidate Education'].tolist()]
+            df['Highest_Education'] = [x['l'] for x in ed]
+            df['Primary_Discipline'] = [x['d'] for x in ed]
+            df['Institution'] = [x['s'] for x in ed]
+        else:
+            df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = "Not Provided", "Not Listed", "Not Listed"
 
-        lo = ['Candidate Name', 'Email Address', 'NRIC Number', 'Mobile Number', 'Citizenship', 'Country Of Birth', 'Eligibility_Status', 'Job Name', 'Job_Domain', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Application Status', 'Rank']
-        av = [c for c in lo if c in df.columns or c in ['Highest_Education', 'Primary_Discipline', 'Institution', 'Eligibility_Status', 'Rank', 'Job_Domain', 'Job Name']]
-        master_df = df[av]
+        lo = ['Candidate Name', 'Email Address', 'NRIC Number', 'Mobile Number', 'Citizenship', 'Country Of Birth', 'Eligibility_Status',
+              'Job Name', 'Job Domain', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Application Status', 'Rank']
+        master_df = df[[c for c in lo if c in df.columns]]
 
-        domain_list = ["All Domains"] + sorted(list(master_df['Job_Domain'].unique()))
+        # sidebar filters
+        domain_list = ["All Domains"] + sorted(master_df['Job Domain'].unique().tolist())
         selected_domain = st.sidebar.selectbox("Filter by Domain Track", domain_list)
-        filtered_job_source = master_df if selected_domain == "All Domains" else master_df[master_df['Job_Domain'] == selected_domain]
-        job_list = ["All Jobs"] + sorted(list(filtered_job_source['Job Name'].unique())) if 'Job Name' in filtered_job_source.columns else ["All Jobs"]
-        selected_job = st.sidebar.selectbox("Filter by Job Requisition", job_list)
+        src = master_df if selected_domain == "All Domains" else master_df[master_df['Job Domain'] == selected_domain]
+        selected_job = st.sidebar.selectbox("Filter by Job Requisition", ["All Jobs"] + sorted(src['Job Name'].unique().tolist()))
 
-        apps_df = master_df.copy().fillna("Not Provided")
-        u_build = master_df.copy().sort_values(by=['Rank'], ascending=[True])
-        u_build['NRIC Number'] = u_build['NRIC Number'].replace("", pd.NA)
-        u_build['Comp_Key'] = [f"{str(n).lower().replace(' ', '')}_{str(i)}" for n, i in zip(u_build['Candidate Name'].tolist(), u_build['NRIC Number'].tolist())]
-        has_nric = u_build[u_build['NRIC Number'].notna()].drop_duplicates(subset=['Comp_Key'], keep='first')
-        no_nric = u_build[u_build['NRIC Number'].isna()]
-        pass1_df = pd.concat([has_nric, no_nric])
-        pass1_df['Email Address'] = pass1_df['Email Address'].replace("", pd.NA)
-        uniq_df = pass1_df.drop_duplicates(subset=['Email Address'], keep='first')
-        if 'Comp_Key' in uniq_df.columns: uniq_df = uniq_df.drop(columns=['Comp_Key'])
+        # two outcomes
+        apps_df = master_df.copy()
+        uniq_df = dedupe(master_df.copy())
 
         if selected_domain != "All Domains":
-            apps_df = apps_df[apps_df['Job_Domain'] == selected_domain]
-            uniq_df = uniq_df[uniq_df['Job_Domain'] == selected_domain]
-        if 'Job Name' in apps_df.columns and selected_job != "All Jobs":
+            apps_df = apps_df[apps_df['Job Domain'] == selected_domain]
+            uniq_df = uniq_df[uniq_df['Job Domain'] == selected_domain]
+        if selected_job != "All Jobs":
             apps_df = apps_df[apps_df['Job Name'] == selected_job]
             uniq_df = uniq_df[uniq_df['Job Name'] == selected_job]
 
-        if 'Rank' in apps_df.columns: apps_df = apps_df.drop(columns=['Rank'])
-        if 'Rank' in uniq_df.columns: uniq_df = uniq_df.drop(columns=['Rank'])
+        apps_df, uniq_df = apps_df.fillna("Not Provided"), uniq_df.fillna("Not Provided")
 
-        t1, t2 = st.tabs(["?? View A: Total Applications Funnel", "?? View B: Unique Applicants Funnel"])
-        with t1: tab("Total Applications Funnel", apps_df, selected_job, selected_domain)
-        with t2: tab("Unique Applicants Funnel", uniq_df, selected_job, selected_domain)
+        t1, t2 = st.tabs(["📄 View A: Total Applications Funnel", "👤 View B: Unique Applicants Funnel"])
+        with t1: tab("Total Applications Funnel", apps_df, selected_job, selected_domain, "dl_total")
+        with t2: tab("Unique Applicants Funnel", uniq_df, selected_job, selected_domain, "dl_unique")
     except Exception as e: st.error(f"Error compiling funnel: {e}")
 else: st.info("Awaiting raw dataset upload to generate funnel pipelines.")
