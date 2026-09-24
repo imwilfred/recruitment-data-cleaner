@@ -118,10 +118,7 @@ if file is not None:
         df['Rank'] = df['Application Status'].apply(lambda x: sm.get(str(x).strip().lower(), 12))
 
         def get_dom(jn):
-            ck = str(jn).replace('\xa0', ' ').replace('\u200b', ' ')
-            ck = ck.replace('–', '-').replace('—', '-').replace('‒', '-')
-            ck = ck.replace('[', '').replace(']', '').replace('(', '').replace(')', '')
-            ck = ck.replace(' ', '').replace('/', '').strip().upper()
+            ck = clean_txt_key(jn)
             if st.session_state["m_df"] is not None:
                 if ck in st.session_state["m_df"]:
                     v = str(st.session_state["m_df"][ck]).strip()
