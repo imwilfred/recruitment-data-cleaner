@@ -187,7 +187,10 @@ if file is not None:
         if 'App Date' not in df.columns:
             d_col = next((c for c in df.columns if 'DATE' in c.upper() and 'BIRTH' not in c.upper()), None)
             if d_col: df = df.rename(columns={d_col: 'App Date'})
-        if 'App Date' in df.columns: df['App Date'] = pd.to_datetime(df['App Date'], errors='coerce')
+        if 'App Date' in df.columns:
+            df['App Date'] = pd.to_datetime(df['App Date'], errors='coerce')
+            if getattr(df['App Date'].dt, 'tz', None) is not None:
+                df['App Date'] = df['App Date'].dt.tz_localize(None)
 
         clean_str_col(df, 'Candidate Name', str.title)
         clean_str_col(df, 'Email Address', str.lower)
@@ -228,22 +231,22 @@ if file is not None:
               'Job Name', 'Job Domain', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Application Status', 'App Date', 'Rank']
         master_df = df[[c for c in lo if c in df.columns]]
 
-        # sidebar filters
+        # sidebar filters - leave a filter empty to include everything for that field
         domain_list = sorted(master_df['Job Domain'].unique().tolist())
-        sel_domains = st.sidebar.multiselect("Job Domain", domain_list, default=domain_list)
-        src = master_df[master_df['Job Domain'].isin(sel_domains)]
+        sel_domains = st.sidebar.multiselect("Job Domain (blank = all)", domain_list)
+        src = master_df[master_df['Job Domain'].isin(sel_domains)] if sel_domains else master_df
 
         job_list = sorted(src['Job Name'].unique().tolist())
-        sel_jobs = st.sidebar.multiselect("Job Name", job_list, default=job_list)
+        sel_jobs = st.sidebar.multiselect("Job Name (blank = all)", job_list)
 
         status_list = sorted(master_df['Application Status'].unique().tolist()) if 'Application Status' in master_df.columns else []
-        sel_status = st.sidebar.multiselect("Application Status", status_list, default=status_list) if status_list else None
+        sel_status = st.sidebar.multiselect("Application Status (blank = all)", status_list) if status_list else None
 
         elig_list = sorted(master_df['Eligibility_Status'].unique().tolist())
-        sel_elig = st.sidebar.multiselect("Eligibility", elig_list, default=elig_list)
+        sel_elig = st.sidebar.multiselect("Eligibility (blank = all)", elig_list)
 
         edu_list = sorted(master_df['Highest_Education'].unique().tolist()) if 'Highest_Education' in master_df.columns else []
-        sel_edu = st.sidebar.multiselect("Highest Education", edu_list, default=edu_list) if edu_list else None
+        sel_edu = st.sidebar.multiselect("Highest Education (blank = all)", edu_list) if edu_list else None
 
         date_range = None
         if 'App Date' in master_df.columns and master_df['App Date'].notna().any():
@@ -251,9 +254,11 @@ if file is not None:
             date_range = st.sidebar.date_input("Application Date range", (dmin, dmax), min_value=dmin, max_value=dmax)
 
         def apply_filters(d):
-            d = d[d['Job Domain'].isin(sel_domains) & d['Job Name'].isin(sel_jobs) & d['Eligibility_Status'].isin(sel_elig)]
-            if sel_status is not None: d = d[d['Application Status'].isin(sel_status)]
-            if sel_edu is not None: d = d[d['Highest_Education'].isin(sel_edu)]
+            if sel_domains: d = d[d['Job Domain'].isin(sel_domains)]
+            if sel_jobs: d = d[d['Job Name'].isin(sel_jobs)]
+            if sel_elig: d = d[d['Eligibility_Status'].isin(sel_elig)]
+            if sel_status: d = d[d['Application Status'].isin(sel_status)]
+            if sel_edu: d = d[d['Highest_Education'].isin(sel_edu)]
             if date_range and isinstance(date_range, tuple) and len(date_range) == 2:
                 start, end = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1]) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
                 d = d[d['App Date'].between(start, end) | d['App Date'].isna()]
@@ -263,8 +268,8 @@ if file is not None:
         apps_df = apply_filters(master_df.copy())
         uniq_df = dedupe(apply_filters(master_df.copy()))
 
-        label_dom = "All Domains" if set(sel_domains) == set(domain_list) else (sel_domains[0] if len(sel_domains) == 1 else f"{len(sel_domains)} domains")
-        label_job = "All Jobs" if set(sel_jobs) == set(job_list) else (sel_jobs[0] if len(sel_jobs) == 1 else f"{len(sel_jobs)} jobs")
+        label_dom = "All Domains" if not sel_domains else (sel_domains[0] if len(sel_domains) == 1 else f"{len(sel_domains)} domains")
+        label_job = "All Jobs" if not sel_jobs else (sel_jobs[0] if len(sel_jobs) == 1 else f"{len(sel_jobs)} jobs")
 
         apps_df, uniq_df = apps_df.fillna("Not Provided"), uniq_df.fillna("Not Provided")
 
