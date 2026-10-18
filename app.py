@@ -1,7 +1,7 @@
 import streamlit as st, pandas as pd, re, io
 
 st.set_page_config(page_title="Funnel", layout="wide")
-st.title("ðŸ“Š Interactive Recruitment Funnel & Data Cleaner")
+st.title("Interactive Recruitment Funnel & Data Cleaner")
 
 if "ukey" not in st.session_state: st.session_state["ukey"] = 0
 if "m_df" not in st.session_state: st.session_state["m_df"] = None
@@ -54,7 +54,7 @@ def dedupe(d):
 
 
 def fnl(t, e, s, i, o, h):
-    st.markdown("### ðŸ”» Visual Pipeline Funnel (Strict Sequential Step-Down)")
+    st.markdown("### Visual Pipeline Funnel (Strict Sequential Step-Down)")
     p = lambda v: (v / t * 100) if t > 0 else 0
     stg = [
         {"n": "1. Total Inflow / Intake Pool", "v": t, "w": "100%", "c": "#1E88E5"},
@@ -89,7 +89,7 @@ def edu(x):
         if any(k in pu for k in ik) or any(k in pu for k in sk) or len(p) <= 2: continue
         if len(p) > l_len: l_len = len(p); ds = p
     if ds != "Not Listed":
-        ds = re.sub(r'^(Bachelor of|Master of|BSc|BEng|Diploma in|BSc Hons|Degree in|Tecnologo Em|TecnÃ³logo Em)\s*', '', ds, flags=re.IGNORECASE)
+        ds = re.sub(r'^(Bachelor of|Master of|BSc|BEng|Diploma in|BSc Hons|Degree in|Tecnologo Em|Tecnologo Em)\s*', '', ds, flags=re.IGNORECASE)
         ds = re.sub(r'[\-,]\s*(Honours|Honors|Distinction|Graduation).*$', '', ds, flags=re.IGNORECASE).strip()
         for k in ["NTU", "NUS", "SMU", "SIT", "SUSS", "SUTD"]:
             if ds.endswith(k): ds = ds[:-len(k)].strip()
@@ -106,14 +106,14 @@ def tab(title, data, job, dom, key):
     o = len(el[el['Rank'] <= 5]) if has_rank else 0
     h = len(el[el['Rank'] == 1]) if has_rank else 0
     st.subheader(f"{title}: {f'All Positions ({dom})' if job == 'All Jobs' else f'{job} ({dom})'}")
-    fv, dv = st.tabs(["ðŸ”» View Graphical Funnel Map", "ðŸ“‹ View Detailed Data Table"])
+    fv, dv = st.tabs(["View Graphical Funnel Map", "View Detailed Data Table"])
     with fv: fnl(t, e, s, i, o, h)
     with dv:
         g = data.drop(columns=['Rank']) if 'Rank' in data.columns else data
         st.dataframe(g)
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine='openpyxl') as w: g.to_excel(w, index=False, sheet_name='Data')
-        st.download_button(f"ðŸ“¥ Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx",
+        st.download_button(f"Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=key)
 
 
@@ -150,7 +150,7 @@ if r_file is not None:
                 if k and d: mp[k], titles[k] = d, str(jb).strip()
         if used:
             st.session_state["m_df"], st.session_state["m_titles"] = mp, titles
-            c1.success(f"âœ… Job mapping loaded ({used} sheet(s); newest sheet overrides older)")
+            c1.success(f"Job mapping loaded ({used} sheet(s); newest sheet overrides older)")
             odd = sorted(set(mp.values()) - set(DOMAINS.values()))
             if odd: c1.info(f"Other domain values in mapping file: {', '.join(odd)}")
         else:
@@ -158,15 +158,15 @@ if r_file is not None:
     except Exception as err: c1.error(f"Error reading map: {err}")
 
 if st.session_state["m_df"] is None:
-    c1.info("ðŸ’¡ Upload the Job Mapping file to fill in the Job Domain column.")
+    c1.info("Tip: upload the Job Mapping file to fill in the Job Domain column.")
 
-st.sidebar.header("ðŸŽ›ï¸ Filters")
+st.sidebar.header("Filters")
 st.sidebar.caption("Filters apply to both views once the Raw Candidate file is loaded.")
 file = c2.file_uploader("Step 2: Upload the Raw Candidate file", type=["csv", "xlsx", "xls"], key=f"up_{st.session_state['ukey']}")
 
 # ---------- main ----------
 if file is not None:
-    if st.button("ðŸ—‘ï¸ Clear Candidate File & Restart", type="primary"):
+    if st.button("Clear Candidate File & Restart", type="primary"):
         st.session_state["ukey"] += 1
         st.rerun()
     try:
@@ -210,11 +210,11 @@ if file is not None:
 
         if st.session_state["m_df"] is not None:
             um = sorted(j for j, r in res.items() if r[0] == "Unmapped")
-            pm = sorted(f"{j}  â†’  {r[1]}" for j, r in res.items() if r[1])
+            pm = sorted(f"{j}  ->  {r[1]}" for j, r in res.items() if r[1])
             if um:
-                with st.sidebar.expander(f"âš ï¸ {len(um)} unmapped job names"): st.write(um)
+                with st.sidebar.expander(f"Warning: {len(um)} unmapped job names"): st.write(um)
             if pm:
-                with st.sidebar.expander(f"ðŸ”Ž {len(pm)} matched by partial title - please review"): st.write(pm)
+                with st.sidebar.expander(f"Note: {len(pm)} matched by partial title - please review"): st.write(pm)
 
         if 'Candidate Education' in df.columns:
             ed = [edu(x) for x in df['Candidate Education'].tolist()]
@@ -268,7 +268,7 @@ if file is not None:
 
         apps_df, uniq_df = apps_df.fillna("Not Provided"), uniq_df.fillna("Not Provided")
 
-        t1, t2 = st.tabs(["ðŸ“„ View A: Total Applications Funnel", "ðŸ‘¤ View B: Unique Applicants Funnel"])
+        t1, t2 = st.tabs(["View A: Total Applications Funnel", "View B: Unique Applicants Funnel"])
         with t1: tab("Total Applications Funnel", apps_df, label_job, label_dom, "dl_total")
         with t2: tab("Unique Applicants Funnel", uniq_df, label_job, label_dom, "dl_unique")
     except Exception as e: st.error(f"Error compiling funnel: {e}")
