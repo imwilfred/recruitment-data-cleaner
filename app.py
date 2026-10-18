@@ -1,7 +1,7 @@
 import streamlit as st, pandas as pd, re, io
 
 st.set_page_config(page_title="Funnel", layout="wide")
-st.title("📊 Interactive Recruitment Funnel & Data Cleaner")
+st.title("ðŸ“Š Interactive Recruitment Funnel & Data Cleaner")
 
 if "ukey" not in st.session_state: st.session_state["ukey"] = 0
 if "m_df" not in st.session_state: st.session_state["m_df"] = None
@@ -54,7 +54,7 @@ def dedupe(d):
 
 
 def fnl(t, e, s, i, o, h):
-    st.markdown("### 🔻 Visual Pipeline Funnel (Strict Sequential Step-Down)")
+    st.markdown("### ðŸ”» Visual Pipeline Funnel (Strict Sequential Step-Down)")
     p = lambda v: (v / t * 100) if t > 0 else 0
     stg = [
         {"n": "1. Total Inflow / Intake Pool", "v": t, "w": "100%", "c": "#1E88E5"},
@@ -89,7 +89,7 @@ def edu(x):
         if any(k in pu for k in ik) or any(k in pu for k in sk) or len(p) <= 2: continue
         if len(p) > l_len: l_len = len(p); ds = p
     if ds != "Not Listed":
-        ds = re.sub(r'^(Bachelor of|Master of|BSc|BEng|Diploma in|BSc Hons|Degree in|Tecnologo Em|Tecnólogo Em)\s*', '', ds, flags=re.IGNORECASE)
+        ds = re.sub(r'^(Bachelor of|Master of|BSc|BEng|Diploma in|BSc Hons|Degree in|Tecnologo Em|TecnÃ³logo Em)\s*', '', ds, flags=re.IGNORECASE)
         ds = re.sub(r'[\-,]\s*(Honours|Honors|Distinction|Graduation).*$', '', ds, flags=re.IGNORECASE).strip()
         for k in ["NTU", "NUS", "SMU", "SIT", "SUSS", "SUTD"]:
             if ds.endswith(k): ds = ds[:-len(k)].strip()
@@ -106,14 +106,14 @@ def tab(title, data, job, dom, key):
     o = len(el[el['Rank'] <= 5]) if has_rank else 0
     h = len(el[el['Rank'] == 1]) if has_rank else 0
     st.subheader(f"{title}: {f'All Positions ({dom})' if job == 'All Jobs' else f'{job} ({dom})'}")
-    fv, dv = st.tabs(["🔻 View Graphical Funnel Map", "📋 View Detailed Data Table"])
+    fv, dv = st.tabs(["ðŸ”» View Graphical Funnel Map", "ðŸ“‹ View Detailed Data Table"])
     with fv: fnl(t, e, s, i, o, h)
     with dv:
         g = data.drop(columns=['Rank']) if 'Rank' in data.columns else data
         st.dataframe(g)
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine='openpyxl') as w: g.to_excel(w, index=False, sheet_name='Data')
-        st.download_button(f"📥 Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx",
+        st.download_button(f"ðŸ“¥ Export {title}", data=buf.getvalue(), file_name=f"{title.lower().replace(' ', '_')}.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=key)
 
 
@@ -150,7 +150,7 @@ if r_file is not None:
                 if k and d: mp[k], titles[k] = d, str(jb).strip()
         if used:
             st.session_state["m_df"], st.session_state["m_titles"] = mp, titles
-            c1.success(f"✅ Job mapping loaded ({used} sheet(s); newest sheet overrides older)")
+            c1.success(f"âœ… Job mapping loaded ({used} sheet(s); newest sheet overrides older)")
             odd = sorted(set(mp.values()) - set(DOMAINS.values()))
             if odd: c1.info(f"Other domain values in mapping file: {', '.join(odd)}")
         else:
@@ -158,15 +158,15 @@ if r_file is not None:
     except Exception as err: c1.error(f"Error reading map: {err}")
 
 if st.session_state["m_df"] is None:
-    c1.info("💡 Upload the Job Mapping file to fill in the Job Domain column.")
+    c1.info("ðŸ’¡ Upload the Job Mapping file to fill in the Job Domain column.")
 
-st.sidebar.header("🎛️ Filters")
+st.sidebar.header("ðŸŽ›ï¸ Filters")
 st.sidebar.caption("Filters apply to both views once the Raw Candidate file is loaded.")
 file = c2.file_uploader("Step 2: Upload the Raw Candidate file", type=["csv", "xlsx", "xls"], key=f"up_{st.session_state['ukey']}")
 
 # ---------- main ----------
 if file is not None:
-    if st.button("🗑️ Clear Candidate File & Restart", type="primary"):
+    if st.button("ðŸ—‘ï¸ Clear Candidate File & Restart", type="primary"):
         st.session_state["ukey"] += 1
         st.rerun()
     try:
@@ -183,6 +183,11 @@ if file is not None:
             if t_jb: df = df.rename(columns={t_jb: 'Job Name'})
         if 'Job Name' not in df.columns: df['Job Name'] = "Unknown Role"
         if 'Citizenship' not in df.columns: df['Citizenship'] = ""
+
+        if 'App Date' not in df.columns:
+            d_col = next((c for c in df.columns if 'DATE' in c.upper() and 'BIRTH' not in c.upper()), None)
+            if d_col: df = df.rename(columns={d_col: 'App Date'})
+        if 'App Date' in df.columns: df['App Date'] = pd.to_datetime(df['App Date'], errors='coerce')
 
         clean_str_col(df, 'Candidate Name', str.title)
         clean_str_col(df, 'Email Address', str.lower)
@@ -205,11 +210,11 @@ if file is not None:
 
         if st.session_state["m_df"] is not None:
             um = sorted(j for j, r in res.items() if r[0] == "Unmapped")
-            pm = sorted(f"{j}  →  {r[1]}" for j, r in res.items() if r[1])
+            pm = sorted(f"{j}  â†’  {r[1]}" for j, r in res.items() if r[1])
             if um:
-                with st.sidebar.expander(f"⚠️ {len(um)} unmapped job names"): st.write(um)
+                with st.sidebar.expander(f"âš ï¸ {len(um)} unmapped job names"): st.write(um)
             if pm:
-                with st.sidebar.expander(f"🔎 {len(pm)} matched by partial title - please review"): st.write(pm)
+                with st.sidebar.expander(f"ðŸ”Ž {len(pm)} matched by partial title - please review"): st.write(pm)
 
         if 'Candidate Education' in df.columns:
             ed = [edu(x) for x in df['Candidate Education'].tolist()]
@@ -220,30 +225,51 @@ if file is not None:
             df['Highest_Education'], df['Primary_Discipline'], df['Institution'] = "Not Provided", "Not Listed", "Not Listed"
 
         lo = ['Candidate Name', 'Email Address', 'NRIC Number', 'Mobile Number', 'Citizenship', 'Country Of Birth', 'Eligibility_Status',
-              'Job Name', 'Job Domain', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Application Status', 'Rank']
+              'Job Name', 'Job Domain', 'Highest_Education', 'Primary_Discipline', 'Institution', 'Application Status', 'App Date', 'Rank']
         master_df = df[[c for c in lo if c in df.columns]]
 
         # sidebar filters
-        domain_list = ["All Domains"] + sorted(master_df['Job Domain'].unique().tolist())
-        selected_domain = st.sidebar.selectbox("Filter by Domain Track", domain_list)
-        src = master_df if selected_domain == "All Domains" else master_df[master_df['Job Domain'] == selected_domain]
-        selected_job = st.sidebar.selectbox("Filter by Job Requisition", ["All Jobs"] + sorted(src['Job Name'].unique().tolist()))
+        domain_list = sorted(master_df['Job Domain'].unique().tolist())
+        sel_domains = st.sidebar.multiselect("Job Domain", domain_list, default=domain_list)
+        src = master_df[master_df['Job Domain'].isin(sel_domains)]
+
+        job_list = sorted(src['Job Name'].unique().tolist())
+        sel_jobs = st.sidebar.multiselect("Job Name", job_list, default=job_list)
+
+        status_list = sorted(master_df['Application Status'].unique().tolist()) if 'Application Status' in master_df.columns else []
+        sel_status = st.sidebar.multiselect("Application Status", status_list, default=status_list) if status_list else None
+
+        elig_list = sorted(master_df['Eligibility_Status'].unique().tolist())
+        sel_elig = st.sidebar.multiselect("Eligibility", elig_list, default=elig_list)
+
+        edu_list = sorted(master_df['Highest_Education'].unique().tolist()) if 'Highest_Education' in master_df.columns else []
+        sel_edu = st.sidebar.multiselect("Highest Education", edu_list, default=edu_list) if edu_list else None
+
+        date_range = None
+        if 'App Date' in master_df.columns and master_df['App Date'].notna().any():
+            dmin, dmax = master_df['App Date'].min().date(), master_df['App Date'].max().date()
+            date_range = st.sidebar.date_input("Application Date range", (dmin, dmax), min_value=dmin, max_value=dmax)
+
+        def apply_filters(d):
+            d = d[d['Job Domain'].isin(sel_domains) & d['Job Name'].isin(sel_jobs) & d['Eligibility_Status'].isin(sel_elig)]
+            if sel_status is not None: d = d[d['Application Status'].isin(sel_status)]
+            if sel_edu is not None: d = d[d['Highest_Education'].isin(sel_edu)]
+            if date_range and isinstance(date_range, tuple) and len(date_range) == 2:
+                start, end = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1]) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+                d = d[d['App Date'].between(start, end) | d['App Date'].isna()]
+            return d
 
         # two outcomes
-        apps_df = master_df.copy()
-        uniq_df = dedupe(master_df.copy())
+        apps_df = apply_filters(master_df.copy())
+        uniq_df = dedupe(apply_filters(master_df.copy()))
 
-        if selected_domain != "All Domains":
-            apps_df = apps_df[apps_df['Job Domain'] == selected_domain]
-            uniq_df = uniq_df[uniq_df['Job Domain'] == selected_domain]
-        if selected_job != "All Jobs":
-            apps_df = apps_df[apps_df['Job Name'] == selected_job]
-            uniq_df = uniq_df[uniq_df['Job Name'] == selected_job]
+        label_dom = "All Domains" if set(sel_domains) == set(domain_list) else (sel_domains[0] if len(sel_domains) == 1 else f"{len(sel_domains)} domains")
+        label_job = "All Jobs" if set(sel_jobs) == set(job_list) else (sel_jobs[0] if len(sel_jobs) == 1 else f"{len(sel_jobs)} jobs")
 
         apps_df, uniq_df = apps_df.fillna("Not Provided"), uniq_df.fillna("Not Provided")
 
-        t1, t2 = st.tabs(["📄 View A: Total Applications Funnel", "👤 View B: Unique Applicants Funnel"])
-        with t1: tab("Total Applications Funnel", apps_df, selected_job, selected_domain, "dl_total")
-        with t2: tab("Unique Applicants Funnel", uniq_df, selected_job, selected_domain, "dl_unique")
+        t1, t2 = st.tabs(["ðŸ“„ View A: Total Applications Funnel", "ðŸ‘¤ View B: Unique Applicants Funnel"])
+        with t1: tab("Total Applications Funnel", apps_df, label_job, label_dom, "dl_total")
+        with t2: tab("Unique Applicants Funnel", uniq_df, label_job, label_dom, "dl_unique")
     except Exception as e: st.error(f"Error compiling funnel: {e}")
 else: st.info("Awaiting raw dataset upload to generate funnel pipelines.")
